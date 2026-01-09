@@ -1,0 +1,457 @@
+include "Type.dfy"
+include "Auxilarily.dfy"
+include "Axioms.dfy"
+include "common/proofs.dfy"
+include "Invariants.dfy"
+
+/**
+ @Module Name : M_Replica
+ @Description : Definitions of replica's state, behaviours, and invariants 
+ */
+module M_Replica {
+    import opened M_SpecTypes
+    import opened M_AuxilarilyFunc
+    import opened M_Axiom
+    import opened M_ProofTactic
+    import opened M_Invariants
+
+    /**
+     *  Bookeeping variables for a replica
+     *  id : identifier
+     *  bc : local blockchain
+     *  viewNum : view number
+     *  prepareQC : Quorum Certificate for prepare message
+     *  commitQC : Qurum Certificate for pre-commit message, also refers to "lockQC" at the HotStuff paper
+     *  msgReceived : all the messages recieved by replica
+     *  msgSent : all the messages sent by replica
+     */
+    datatype ReplicaState = ReplicaState(
+        id : Address,
+        bc : Blockchain,
+        viewNum : nat,
+        prepareQC : Cert,
+        commitQC : Cert,
+        msgReceived : set<Msg>,
+        msgSent : set<Msg>
+    )
+
+    /**
+     *  Replica state initialization
+     *  This predicate defines what a initialize state of replica should satisfy.
+     *  At the initial stage of HotStuff, an unique address (id) will be assigned to each replica
+     *  and all the replica will start at view 1.
+     *
+     *  We assume at view 0, 
+     *  all replica hold a local blockchain with a predifined block `Genesis_Block`, 
+     *  which requires they keep prepare and precommit Quorum Certificate(QC) for the same block.
+     *  To enter view 1, they will send a New View message `getInitalMsg(id)`.
+     *  
+     */
+    ghost predicate ReplicaInit(r : ReplicaState, id : Address)
+    {
+        NoOuterClient();    // ensures param `id` is in the set of all nodes
+        && r.id == id
+        && r.bc == [M_SpecTypes.Genesis_Block]
+        && r.viewNum == 1
+        && r.prepareQC == getInitialQC(MT_Prepare)
+        && r.commitQC == getInitialQC(MT_PreCommit)
+        && r.msgReceived == {}
+        && r.msgSent == {getInitialMsg(id)}
+    }
+
+    /**
+     * Consider this as a big step of state transition.
+     * A current state (@param:r) receives many messages (@param:inMsg), 
+     * and then transfer to another state (@param:r') by many single actions defined in @Func:ReplicaNextSubStep,
+     * sending out messages (@param:outMsg) during making those transitions.
+     */
+    ghost predicate ReplicaNext(
+        r : ReplicaState,
+        inMsg : set<Msg>,
+        r' : ReplicaState,
+        outMsg : set<Msg>
+        )
+    requires ValidReplicaState(r)
+    {
+        var allMsgReceived := r.msgReceived + inMsg;
+        var replicaWithNewMsgReceived := r.(
+            msgReceived := allMsgReceived
+        );
+        exists s : seq<ReplicaState>, o : seq<set<Msg>> ::
+                && |s| > 2
+                && |o| == |s| - 1
+                && s[0] == replicaWithNewMsgReceived
+                && s[|s|-1] == r'
+                && (forall i | 0 <= i < |s| - 1 ::
+                    && ValidReplicaState(s[i])
+                    && ReplicaNextSubStep(s[i], s[i+1], o[i])
+                )
+                && outMsg == setUnionOnSeq(o)
+
+    }
+
+    /**
+     *  All different state transitions.
+     *  Current state (@param:r) could transfer to the next state (@param:r'),
+     *  together with sending out messages (@param:outMsg)
+     */
+    ghost predicate ReplicaNextSubStep(
+        r : ReplicaState, 
+        r' : ReplicaState, 
+        outMsg : set<Msg>
+        )
+    requires ValidReplicaState(r)
+    {
+        || UponNextView(r, r', outMsg)
+        || UponPrepare(r, r', outMsg)
+        || UponPreCommit(r, r', outMsg)
+        || UponCommit(r, r', outMsg)
+        || UponDecide(r, r', outMsg)
+        || UponTimeOut(r, r', outMsg)
+    }
+
+
+    // Refactor for outMsg (28/11/2025)
+    predicate UponPrepare(r : ReplicaState, r' : ReplicaState, outMsg: set<Msg>)
+    requires ValidReplicaState(r)
+    {
+        var leader := leader(r.viewNum);
+        if leader == r.id // Leader
+        then
+            var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
+            var votes := getVotesForSafeProposals(matchProposals, r.commitQC, r.id);
+            var filteredVotes := proposalVoteFilter(votes);
+            var matchMsgs := getMatchMsg(r.msgReceived, MT_NewView, r.viewNum-1);
+            if |matchMsgs| > 0
+            then
+                var highQC := getHighQC(matchMsgs);
+                var proposal := getNewBlock(highQC.block);
+                var proposeMsg := Msg(r.id, MT_Prepare, r.viewNum, proposal, highQC, SigNone, CertNone);
+                && outMsg == filteredVotes + {proposeMsg}
+                && r' == r.(msgSent := r.msgSent + filteredVotes + {proposeMsg})
+            else
+                && outMsg == filteredVotes
+                && r' == r.(msgSent := r.msgSent + filteredVotes)
+        else
+            var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
+            var votes := getVotesForSafeProposals(matchProposals, r.commitQC, r.id);
+            var filteredVotes := proposalVoteFilter(votes);
+            && outMsg == filteredVotes
+            && r' == r.(msgSent := r.msgSent + outMsg)
+    }
+
+    ghost predicate UponPreCommit(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    {
+        var leader := leader(r.viewNum);
+        assert r.prepareQC.Cert? ==> ValidQC(r.prepareQC);
+        if leader == r.id // Leader
+        then
+            // Leader doing leader and replica's work
+            var matchQCs := getMatchQC(r.msgReceived, MT_PreCommit, MT_Prepare, r.viewNum);
+            if |matchQCs| > 0 
+            then 
+                var m_qc :| m_qc in matchQCs;
+                var vote := buildVoteMsg(r.id, MT_PreCommit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_Prepare, r.viewNum);
+
+                var splitSets := splitMsgByBlocks(matchMsgs);
+                var maxSet := getMaxLengthSet(splitSets);
+                var filtedMaxSet := filterDoubleVote(maxSet);
+
+                if |filtedMaxSet| >= quorum(|M_SpecTypes.All_Nodes|)
+                then
+                    Axiom_Common_Constraints();
+                    var m :| m in filtedMaxSet;
+                    var sgns := ExtractSignatrues(filtedMaxSet);
+                    var prepareQC := Cert(MT_Prepare, m.viewNum, m.block, sgns);
+                    var precommitMsg := Msg(r.id, MT_PreCommit, r.viewNum, EmptyBlock, prepareQC, SigNone, CertNone);
+                    && outMsg == {vote, precommitMsg}
+                    && r' == r.(prepareQC := m_qc,
+                                msgSent := r.msgSent + {vote, precommitMsg})
+                else
+                    && outMsg == {vote}
+                    && r' == r.(prepareQC := m_qc,
+                                msgSent := r.msgSent + {vote})
+            else    // Only doing leader's work
+                var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_Prepare, r.viewNum);
+                var splitSets := splitMsgByBlocks(matchMsgs);
+                var maxSet := getMaxLengthSet(splitSets);
+                var filtedMaxSet := filterDoubleVote(maxSet);
+
+                if |filtedMaxSet| >= quorum(|M_SpecTypes.All_Nodes|)
+                then
+                    var m :| m in filtedMaxSet;
+                    var sgns := ExtractSignatrues(filtedMaxSet);
+                    var prepareQC := Cert(MT_Prepare, m.viewNum, m.block, sgns);
+                    var precommitMsg := Msg(r.id, MT_PreCommit, r.viewNum, EmptyBlock, prepareQC, SigNone, CertNone);
+
+                    && outMsg == {precommitMsg}
+                    && r' == r.(msgSent := r.msgSent + {precommitMsg})
+                else
+                    && r' == r
+                    && outMsg == {}
+        else    // Only doing replica's work
+            var matchQCs := getMatchQC(r.msgReceived, MT_PreCommit, MT_Prepare, r.viewNum);
+            if |matchQCs| > 0 
+            then 
+                var m_qc :| m_qc in matchQCs;
+                assert exists m | m in r.msgReceived
+                                ::
+                                  && ValidMsg(m)
+                                  && m.justify == m_qc;
+                                
+                var vote := buildVoteMsg(r.id, MT_PreCommit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                NoOuterClient();
+
+                && outMsg == {vote}
+                && r' == r.(prepareQC := m_qc,
+                            msgSent := r.msgSent + {vote})
+                && ValidQC(r'.prepareQC)
+            else 
+                && outMsg == {}
+                && r' == r
+            
+    }
+
+    ghost predicate UponCommit(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    {
+        var leader := leader(r.viewNum);
+        var matchQCs := getMatchQC(r.msgReceived, MT_Commit, MT_PreCommit, r.viewNum);
+        if leader == r.id // Leader
+        then
+            // Leader doing leader and replica's work
+            var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_PreCommit, r.viewNum);
+            var splitSets := splitMsgByBlocks(matchMsgs);
+            var maxSet := getMaxLengthSet(splitSets);
+            if |matchQCs| > 0 
+            then 
+                var m_qc :| m_qc in matchQCs;
+
+                var vote := buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|)
+                then
+                    Axiom_Common_Constraints();
+                    var m :| m in maxSet;
+                    var sgns := ExtractSignatrues(maxSet);
+                    var precommitQC := Cert(MT_PreCommit, m.viewNum, m.block, sgns);
+                    var commitMsg := Msg(r.id, MT_Commit, r.viewNum, EmptyBlock, precommitQC, SigNone, CertNone);
+
+                    && outMsg == {vote, commitMsg}
+                    && r' == r.(commitQC := m_qc,
+                                msgSent := r.msgSent + {vote, commitMsg})
+                else
+                    && outMsg == {vote}
+                    && r' == r.(commitQC := m_qc,
+                                msgSent := r.msgSent + {vote})
+            else    // Only doing leader's work
+                if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|) && |maxSet| > 0
+                then
+                    var m :| m in maxSet;
+                    var sgns := ExtractSignatrues(maxSet);
+                    var precommitQC := Cert(MT_PreCommit, m.viewNum, m.block, sgns);
+                    var commitMsg := Msg(r.id, MT_Commit, r.viewNum, EmptyBlock, precommitQC, SigNone, CertNone);
+                    && outMsg == {commitMsg}
+                    && r' == r.(msgSent := r.msgSent + {commitMsg})
+                else
+                    && r' == r
+                    && outMsg == {}
+        else    // Only doing replica's work
+            if |matchQCs| > 0 
+            then 
+                var m_qc :| m_qc in matchQCs;
+                var vote := buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                && outMsg == {vote}
+                && r' == r.(commitQC := m_qc,
+                            msgSent := r.msgSent + {vote})
+            else 
+                && outMsg == {}
+                && r' == r
+    }
+
+    ghost predicate UponDecide(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    {
+        var leader := leader(r.viewNum);
+        var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_Commit, r.viewNum);
+        var splitSets := splitMsgByBlocks(matchMsgs);
+        var maxSet := getMaxLengthSet(splitSets);
+
+        var matchQCs := getMatchQC(r.msgReceived, MT_Decide, MT_Commit, r.viewNum);
+
+        if leader == r.id
+        then
+            if |matchQCs| > 0
+            then
+                var m_qc :| m_qc in matchQCs;
+                if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|)
+                then
+                    Axiom_Common_Constraints();
+                    var m :| m in maxSet;
+                    var sgns := ExtractSignatrues(maxSet);
+                    var commitQC := Cert(MT_Commit, m.viewNum, m.block, sgns);
+                    var decideMsg := Msg(r.id, MT_Decide, r.viewNum, EmptyBlock, commitQC, SigNone, CertNone);
+
+                    && outMsg == {decideMsg}
+                    && r' == r.(msgSent := r.msgSent + {decideMsg})
+                    && var ancestors := getAncestors(m_qc.block);
+                    && (
+                        || (
+                            && r.bc < ancestors
+                            && r' == r.(bc := r.bc + ancestors[|r.bc|..])
+                            )
+                        || (
+                            && r' == r
+                            )
+                    )
+                else
+                    && var ancestors := getAncestors(m_qc.block);
+                    && (
+                        || (
+                            && r.bc < ancestors
+                            && r' == r.(bc := r.bc + ancestors[|r.bc|..])
+                            )
+                        || (
+                            && r' == r
+                            )
+                    )
+                    && outMsg == {}
+            else    // |matchQCs| <= 0
+                if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|)
+                then
+                    Axiom_Common_Constraints();
+                    var m :| m in maxSet;
+                    var sgns := ExtractSignatrues(maxSet);
+                    var commitQC := Cert(MT_Commit, m.viewNum, m.block, sgns);
+                    var decideMsg := Msg(r.id, MT_Decide, r.viewNum, EmptyBlock, commitQC, SigNone, CertNone);
+                    && r' == r.(msgSent := r.msgSent + {decideMsg})
+                    && outMsg == {decideMsg}
+                else
+                    && r' == r
+                    && outMsg == {}
+        else    // Not a leader
+            if |matchQCs| > 0
+            then
+                var m_qc :| m_qc in matchQCs;
+                var ancestors := getAncestors(m_qc.block);
+                && (
+                    || (
+                        && r.bc < ancestors
+                        && r' == r.(bc := r.bc + ancestors[|r.bc|..])
+                        )
+                    || (
+                        && r' == r
+                        )
+                )
+                && outMsg == {}
+            else
+                && r' == r
+                && outMsg == {}
+    }
+
+    predicate UponTimeOut(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    {
+        UponNextView(r, r', outMsg)
+    }
+
+    predicate UponNextView(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    {
+        var newViewMsg := Msg(r.id, MT_NewView, r.viewNum, EmptyBlock, r.prepareQC, SigNone, CertNone);
+        assert r.viewNum >= r.prepareQC.viewNum;
+        && r' == r.(viewNum := r.viewNum + 1,
+                    msgSent := r.msgSent + {newViewMsg})
+        && outMsg == {newViewMsg}
+        
+    } 
+
+
+    /**
+     * Invariants that a replica should hold at every state if it act honestly and correctly. 
+     */
+    ghost predicate ValidReplicaState(r : ReplicaState)
+    {
+        && r.viewNum > 0
+        // If a replica accepted a Prepare certificate,
+        // then it must received a PreCommit Message from the leader before, together with a valid Prepare certificate
+        && ValidQC(r.prepareQC)
+        && ValidQC(r.commitQC)
+        && r.viewNum >= r.prepareQC.viewNum
+        && r.viewNum >= r.commitQC.viewNum
+        && (r.prepareQC.Cert? ==>
+                                && ValidQC(r.prepareQC)
+                                && r.prepareQC.cType == MT_Prepare
+                                && ( || (exists m | m in r.msgReceived
+                                            ::
+                                            && m.justify == r.prepareQC
+                                            && ValidPrecommitRequest(m)
+                                        )
+                                     || isInitialQC(r.prepareQC)
+                                )
+            )
+        // If a replica accepted a Precommit certificate (set it to its local variable `commitQC`),
+        // then it must received a Commit Message from the leader before, together with a valid Precommit certificate
+        && (r.commitQC.Cert? ==>
+                                && ValidQC(r.commitQC)
+                                && r.commitQC.cType == MT_PreCommit
+                                && (|| (exists m | m in r.msgReceived
+                                            ::
+                                            && m.justify == r.commitQC
+                                            && ValidCommitRequest(m))
+                                    || isInitialQC(r.commitQC)
+                                )
+            )
+        // If a replica received a Decide Message with a valid certificate,
+        // then it should always update its local blockchain accordingly.
+        && (|| r.bc == [M_SpecTypes.Genesis_Block]
+            || (exists m | && m in r.msgReceived
+                           && ValidDecideMsg(m)
+                        ::
+                           r.bc <= getAncestors(m.justify.block)
+            )
+        )
+        && |r.bc| > 0
+        && r.bc[0] == M_SpecTypes.Genesis_Block
+        && (forall m | m in r.msgSent :: ValidMsg(m))
+        && (forall m | && m in r.msgSent
+                       && ValidPrecommitVote(m)
+                    :: 
+                       exists m2 | m2 in r.msgReceived
+                                ::
+                                   && ValidPrecommitRequest(m2)
+                                   && corrVoteMsgAndToVotedMsg(m, m2))
+        && (forall m | && m in r.msgSent
+                       && ValidCommitVote(m)
+                    :: 
+                       exists m2 | m2 in r.msgReceived
+                                ::
+                                   && ValidCommitRequest(m2)
+                                   && corrVoteMsgAndToVotedMsg(m, m2))
+        && (forall m1, m2 | && m1 in r.msgSent
+                            && ValidPrepareVote(m1)
+                            && m2 in r.msgReceived
+                            && ValidCommitRequest(m2)
+                        ::
+                            m1.viewNum > m2.viewNum
+                            ==>
+                            extension(m1.block, m2.justify.block))
+    }
+
+    function getMsgReceiveReplica(r : ReplicaState) : (m : set<Msg>)
+    {
+        r.msgReceived
+    }
+
+    function getMsgSentReplica(r : ReplicaState) : (m : set<Msg>)
+    {
+        r.msgSent
+    }
+
+    function getReplicaID(r : ReplicaState) : (id : Address)
+    { 
+        r. id
+    }
+
+}
