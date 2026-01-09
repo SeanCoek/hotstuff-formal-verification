@@ -8,6 +8,6 @@ hotstuff-formal-verification --> specs;
 hotstuff-formal-verification --> proofs;
 hotstuff-formal-verification --> common;
 ```
-- The folder [specs](specs) contains all the implementation of protocol specifications, including [type system](specs/Type.dfy), [replica behaviours](specs/Replica.dfy), etc.
-- Lemmas and theorems are written in [proofs](proofs).
+- The folder [specs](specs) contains all the implementation of protocol specifications, including **type system**, **replica behaviours**, etc.
+- **Theorems** and **lemmas** are written in [proofs](proofs).
 - [common](common) writes some useful utilities, such as common proof strategies, or converting a seq to a set, etc.
