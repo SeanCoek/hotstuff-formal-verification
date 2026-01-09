@@ -451,7 +451,6 @@ module M_Lemmas_Replica {
     {
         var leader := leader(r.viewNum);
         assert r'.viewNum > 0;
-        // assert Inv_Blockchain_Inner_Consistency(r'.bc);
         assert && |r'.bc| > 0
                && r'.bc[0] == M_SpecTypes.Genesis_Block;
         

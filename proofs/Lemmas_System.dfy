@@ -31,7 +31,6 @@ module M_Lemmas_System {
             assert ValidSystemState(ss');
         }
         else {
-            // assert false;
             forall replica, msgReceivedByNodes, msgSentByNodes
                     | && msgReceivedByNodes <= ss.msgSent
                       && SystemNextByOneReplica(ss, ss', replica, msgReceivedByNodes, msgSentByNodes)
@@ -53,7 +52,6 @@ module M_Lemmas_System {
 
         }
         else {
-            // assert false;
             var replica, msgReceivedByNodes, msgSentByNodes
                    :|   && msgReceivedByNodes <= ss.msgSent
                         && SystemNextByOneReplica(ss, ss', replica, msgReceivedByNodes, msgSentByNodes);
@@ -119,9 +117,7 @@ module M_Lemmas_System {
     requires inMsg <= ss.msgSent
     requires SystemNextByOneReplica(ss, ss', replica, inMsg, outMsg)
     requires m in outMsg && IsHonest(ss', replica)
-    // ensures forall m | m in outMsg && IsHonest(ss', m.sender) :: m in ss'.nodeStates[m.sender].msgSent
     ensures m.sender == replica
-    // ensures m in ss'.nodeStates[m.sender].msgSent
     {
         var r := ss.nodeStates[replica];
         var r' := ss'.nodeStates[replica];

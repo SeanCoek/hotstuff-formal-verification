@@ -40,7 +40,6 @@ module M_Set {
 
             }
             assert |s-x| == |y|;
-            // LemmaSetEquivlent(s-x, y);
             Set.LemmaSubsetEquality(s-x, y);
             assert s - x == y;
         }
@@ -92,15 +91,6 @@ module M_Set {
         && (forall x, y :: R(x, y) || R(y, x))
     }
 
-    // function setToSeq<T(!new)> (s : set<T>, R : (T, T) -> bool) : (r : seq<T>)
-    // requires isTotoalOrder(R)
-    // ensures forall i | 0 <= i < |r| :: r[i] in s
-    // ensures forall e | e in s :: e in r
-    // {
-    //     if s == {} then []
-    //     else
-
-    // }
 
     lemma setEqualityTest<T>(s1 : set<T>, s2 : set<T>, p : T -> bool)
     requires s1 == s2

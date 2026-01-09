@@ -37,6 +37,7 @@ module M_Thereom {
     }
 
     /**
+     * Theorem : Safety
      * In every reachable system state, 
      * local blockchains in honest replicas should be consistent.
      * 

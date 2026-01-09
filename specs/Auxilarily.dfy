@@ -42,23 +42,6 @@ module M_AuxilarilyFunc {
     {
     }
 
-
-    // /**
-    //  * @returns : a seq containing all elements in a set
-    //  */
-    // function setToSeq<T>(s : set<T>) : (r : seq<T>)
-    // ensures forall e | e in s :: e in r
-    // ensures forall i, j |   && 0 <= i < |r|
-    //                         && 0 <= j < |r|
-    //                     :: r[i] == r[j] ==> i == j
-    // ensures forall e | e in r :: e in s
-
-    // lemma EqualSizeBySetToSeq<T>(s : set<T>)
-    // ensures |setToSeq({})| == 0
-    // {
-
-    // }
-
     lemma LemmaElementInSetUnionOnSeqMustExistInOneOfTheSets<T>(e : T, sets : seq<set<T>>)
     requires e in setUnionOnSeq(sets)
     ensures exists i | 0 <= i < |sets|:: e in sets[i]
@@ -78,7 +61,7 @@ module M_AuxilarilyFunc {
             (setSize - 1) / 3
     }
 
-    function getInitialQC(cType : MsgType) : (r : Cert)
+    function{:axiom} getInitialQC(cType : MsgType) : (r : Cert)
     ensures ValidQC(r)
     ensures r.cType == cType && r.viewNum == 0 && r.block == Genesis_Block
 
@@ -110,7 +93,6 @@ module M_AuxilarilyFunc {
     *          Byzantine.
     */
     function quorum(setSize : nat) : (r: nat)
-    // requires setSize > 0
     ensures r <= setSize
     {
         // 2*(setSize - 1) / 3 + 1
@@ -196,7 +178,7 @@ module M_AuxilarilyFunc {
     }
 
     /* Mapping each round to a delegated leader */
-    function leader(round : nat) : (l : Address)
+    function{:axiom} leader(round : nat) : (l : Address)
     ensures l in M_SpecTypes.All_Nodes
 
     /* 
@@ -207,7 +189,7 @@ module M_AuxilarilyFunc {
     but carring different block, quorum certificate, etc.
     Therefore, we should strengthen this function by adding constrains.
     */
-    function getMatchMsg(msgs : set<Msg>, msgType : MsgType, view : nat) : (r : set<Msg>)
+    function{:axiom} getMatchMsg(msgs : set<Msg>, msgType : MsgType, view : nat) : (r : set<Msg>)
     ensures forall m | m in r :: ValidMsg(m) && m.mType == msgType && m.viewNum == view
     ensures forall m | m in msgs :: ValidMsg(m) && m.mType == msgType && m.viewNum == view ==> m in r
     ensures forall m | m in r
@@ -215,20 +197,6 @@ module M_AuxilarilyFunc {
                        exists m2 | m2 in msgs
                                 :: 
                                    m == m2
-    // A honest node should only send one message in each phase of each round.
-    // i.e.  
-    // ensures forall m1, m2 | m1 in r && m2 in r :: m1.partialSig != m2.partialSig
-    // ensures (forall m | m in msgs :: (
-    //                                  && (m.mType == msgType && m.viewNum == view)
-    //                                  && !(exists m2 | m2 in msgs :: && m2 != m
-    //                                                                 && m2.partialSig == m.partialSig)
-    //                                  )
-    //                                  ==> m in r)
-    // {
-    //     set m | && m in msgs
-    //             && m.mType == msgType
-    //             && m.viewNum == view
-    // }
 
     function getMatchVoteMsg(msgs : set<Msg>, t : MsgType, view : nat) : (r : set<Msg>)
     ensures (forall m | m in r 
@@ -304,8 +272,6 @@ module M_AuxilarilyFunc {
     requires forall m | m in msgs :: ValidVoteMsg(m)
     requires forall m1, m2 | m1 in msgs && m2 in msgs
                           :: 
-                            // && m1.mType == m2.mType
-                            // &&
                               ( m1 != m2
                                 ==>
                                 corrVotesFromDiffSigner(m1, m2)
@@ -347,70 +313,24 @@ module M_AuxilarilyFunc {
                 m.justify
     }
 
-    // function pickMsgFromSet(msgs : set<Msg>) : (r : Msg)
-    // requires msgs != {}
-    // ensures r in msgs
-    // {
 
-    // }
-
-    // predicate highQCComparator(m1 : Msg, m2 : Msg)
-    // requires ValidQC(m1.justify) && ValidQC(m2.justify)
-    // {
-    //     || m1.justify.viewNum > m2.justify.viewNum
-    //     || m1.
-    // }
-
-
-    function getHighQC(msgs : set<Msg>) : (r : Cert)
+    function{:axiom} getHighQC(msgs : set<Msg>) : (r : Cert)
     requires msgs != {}
     requires forall m | m in msgs :: ValidQC(m.justify)
-    // requires forall m1, m2 | m1 in msgs && m2 in msgs :: m1 != m2 ==> m1.justify.viewNum != m2.justify.viewNum
     ensures ValidQC(r)
     ensures forall m | m in msgs :: ValidQC(m.justify) ==> r.viewNum >= m.justify.viewNum
     ensures exists m | m in msgs :: ValidQC(m.justify) && m.justify == r
-    // {
-        // if |msgs| == 1 then
-        //     Set.LemmaIsSingleton(msgs);
-        //     assert Set.IsSingleton(msgs);
-        //     var m :| m in msgs;
-        //     m.justify
-        // else 
-        //     var m :| m in msgs;
-        //     var m2 := getHighQC(msgs - {m});
-        //     if m2.CertNone? || m.justify.viewNum > m2.viewNum
-        //     then
-        //         m.justify
-        //     else
-        //         m2
-    // }
 
-    function getNewBlock(parent : Block) : (r : Block)
+    function{:axiom} getNewBlock(parent : Block) : (r : Block)
     ensures r.Block?
     ensures r.parent == parent
     ensures r.parent != r
-    // {
-    //     Block(parent)
-    // }
 
-    function getAncestors(b : Block) : (r : seq<Block>)
-    // requires b.Block?
-    // ensures b.parent.Block? ==> |r| > 0 && r[|r|-1] == b
+    function{:axiom} getAncestors(b : Block) : (r : seq<Block>)
     ensures |r| > 0 && r[|r|-1] == b
     ensures forall i | 0 <= i < |r| :: r[i].Block?
     ensures forall i, j | 0 <= i < j < |r| :: r[i] != r[j]  // None duplication
     ensures forall i | 0 <= i < |r|-1 :: r[i] == r[i+1].parent
-    // {
-    //     match (b.Block?) {
-    //         case true =>
-    //                     match (b.parent != EmptyBlock){
-    //                         case true => getAncestors(b.parent) + [b.parent]
-    //                         // case false => [b]
-    //                         case false => []
-    //                     }
-    //         case false => []
-    //     }
-    // }
 
     predicate extension(child : Block, parent : Block)
     requires child.Block?
@@ -433,7 +353,6 @@ module M_AuxilarilyFunc {
         //             assert parent in acstr_c;
         //             assert child == acstr_c[|acstr_c|-1];
         //             assert forall i, j | 0 <= i < j < |acstr_c| :: acstr_c[i] != acstr_c[j];
-                
         //         }
         //     }
         // }
@@ -481,8 +400,6 @@ module M_AuxilarilyFunc {
         // then there are coming from different signers
         && (forall s1, s2 | && s1 in qc.signatures 
                             && s2 in qc.signatures
-                            // && s1 != s2
-                        //  :: s1.signer != s2.signer   // Chenyi
                          :: 
                             && s1 != s2 ==> s1.signer != s2.signer
                          )
@@ -510,13 +427,8 @@ module M_AuxilarilyFunc {
         if |signatures| == 0 {}
         else {
             var s :| s in signatures;
-            // Chenyi: the following steps may be greatly simplified.....
             var signatures' := signatures - {s};
             NumVoters(signatures');
-            // assert |signatures'| == |set sig | sig in signatures' :: sig.signer|;
-            // assert |signatures'+{s}| == |signatures|;
-            // assert |(set sig | sig in signatures' :: sig.signer) + {s.signer}| == |signatures'+{s}|;
-            // assert s.signer !in set sig | sig in signatures' :: sig.signer;
             SetExtension(s.signer, set sig | sig in signatures' :: sig.signer);
             assert |(set sig | sig in signatures' :: sig.signer) + {s.signer}| == |set sig | sig in signatures' :: sig.signer| + 1;
             assert (set sig | sig in signatures :: sig.signer) == (set sig | sig in signatures' :: sig.signer) + {s.signer};
@@ -535,56 +447,30 @@ module M_AuxilarilyFunc {
                     :: vote.signer
     }
 
-    function splitMsgByBlocks(msgs : set<Msg>) : (r : set<set<Msg>>)
+    function{:axiom} splitMsgByBlocks(msgs : set<Msg>) : (r : set<set<Msg>>)
     ensures |msgs| > 0 ==> |r| > 0
     ensures forall mset | mset in r :: mset <= msgs
     ensures forall mset1, mset2 | mset1 in r && mset2 in r :: (mset1 != mset2) ==> |mset1 * mset2| == 0
     ensures (forall mset | mset in r :: (forall m1, m2 | m1 in mset && m2 in mset :: m1.block == m2.block))
-    // {
-    //     set m | 
-    //             && m <= msgs
-    //             && (forall e1, e2 | e1 in m && e2 in m
-    //                                 :: e1.block == e2.block)
-    // }
 
-    function getMaxLengthSet<T>(sets : set<set<T>>) : (r : set<T>)
+
+    function{:axiom} getMaxLengthSet<T>(sets : set<set<T>>) : (r : set<T>)
     ensures r in sets
     ensures forall s | s in sets :: |r| >= |s|
 
 
-    function argmin<T>(s: set<T>, f: T -> int) : (ret : T)
+    function{:axiom} argmin<T>(s: set<T>, f: T -> int) : (ret : T)
     requires s != {}
     ensures forall x :: x in s ==> f(ret) <= f(x)
     ensures ret in s
-    // {
-        // var min :| min in s && forall x :: x in s ==> f(min) <= f(x);
-        // min
-        // var min :| min in s;
-        // min
-        // var remaining := s - {min};
-        // if remaining != {}
-        // {
-        //     var y := argmin(remaining, f);
-        //     ret := if y <= min then y else min;
-        // }
-        // else
-        // {
-        //     assert remaining == {};
-        //     out := min;
-        // }
-    // }
 
-    function argminView(s: set<Msg>) : (ret : Msg)
+    function{:axiom} argminView(s: set<Msg>) : (ret : Msg)
     requires s != {}
     requires forall x | x in s :: x.justify.Cert?
     ensures ret in s
     ensures forall x :: x in s ==> ret.justify.viewNum <= x.justify.viewNum
-    // {
-    //     var min :| min in s && forall x :: x in s ==> min.justify.viewNum <= x.justify.viewNum;
-    //     min
-    // }
 
-    function argmax<T>(s: set<T>, f: T -> int) : (ret : T)
+    function{:axiom} argmax<T>(s: set<T>, f: T -> int) : (ret : T)
     requires s != {}
     ensures forall x :: x in s ==> f(ret) >= f(x)
     ensures ret in s
@@ -753,7 +639,6 @@ module M_AuxilarilyFunc {
                     && m.justify.cType.MT_Prepare?
                     && m.block.Block?
                     && m.block.parent == m.justify.block
-                    // && m.viewNum > m.justify.viewNum
                     )
                 // Prepare Vote
                 || 
@@ -837,7 +722,6 @@ module M_AuxilarilyFunc {
 
     predicate corrVoteMsgAndToVotedMsg(vote : Msg, toVote : Msg)
     requires ValidVoteMsg(vote) && ValidMsg(toVote)
-    // requires vote.partialSig.Signature?
     requires ValidQC(toVote.justify)
     {
         || ( // Prepare Vote
@@ -849,7 +733,6 @@ module M_AuxilarilyFunc {
         || ( // Precommit Vote
             && ValidPrecommitVote(vote)
             && ValidPrecommitRequest(toVote)
-            // && toVote.partialSig.SigNone?
             && vote.partialSig.block == toVote.justify.block
             && vote.partialSig.viewNum == toVote.justify.viewNum
         )
@@ -893,12 +776,7 @@ module M_AuxilarilyFunc {
     function getVotesForSafeProposals(proposals : set<Msg>, lockedQC : Cert, id : Address) : (votes : set<Msg>)
     requires forall p | p in proposals :: ValidProposal(p)
     requires ValidQC(lockedQC) || lockedQC.CertNone?
-    // requires id in M_SpecTypes.All_Nodes
     {
-        // if |proposals| == 0 then {}
-        // else
-        //     voteForProposal(proposals[0], lockedQC, id)
-        //      + getVotesForSafeProposals(proposals[1..], lockedQC, id)
         set vote | vote in proposals
                 :: voteForProposal(vote, lockedQC, id)
     }
@@ -906,7 +784,6 @@ module M_AuxilarilyFunc {
     function voteForProposal(proposal : Msg, lockedQC : Cert, id : Address) : (vote : Msg)
     requires ValidProposal(proposal)
     requires ValidQC(lockedQC) || lockedQC.CertNone?
-    // requires id in M_SpecTypes.All_Nodes
     {
         if 
             && extension(proposal.block, proposal.justify.block) 
@@ -927,25 +804,6 @@ module M_AuxilarilyFunc {
                 && v.block.EmptyBlock? && v.partialSig.block.EmptyBlock?
                 :: v
     }
-
-    function pickOneVoteDeterministic(votes : set<Msg>) : (r : Msg)
-    requires votes != {}
-    requires forall v | v in votes :: ValidVoteMsg(v)
-    ensures r in votes
-    ensures forall v | v in votes :: orderMsg(r) <= orderMsg(v)
-    // {
-    //     var voteOrders := set v | v in votes :: orderMsg(v);
-    // }
-
-    // lemma pickTest(votes : set<Msg>)
-    // requires votes != {}
-    // requires forall v | v in votes :: ValidVoteMsg(v)
-    // ensures pickOneVoteDeterministic(votes) == pickOneVoteDeterministic(votes)
-    // {
-
-    // }
-
-
 
     predicate predHonestNodeInTwoQC(honest : set<Address>, qc1 : Cert, qc2 : Cert, r : Address)
     requires ValidQC(qc1) && ValidQC(qc2)
@@ -980,7 +838,7 @@ module M_AuxilarilyFunc {
         signers1 * signers2
     }
 
-    function filterDoubleVote(msgs : set<Msg>) : (r : set<Msg>)
+    function{:axiom} filterDoubleVote(msgs : set<Msg>) : (r : set<Msg>)
     requires forall m | m in msgs :: ValidVoteMsg(m)
     requires forall m1, m2 | && m1 in msgs 
                              && m2 in msgs
