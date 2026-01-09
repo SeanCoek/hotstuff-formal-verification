@@ -2,7 +2,7 @@ include "Type.dfy"
 include "Adversary.dfy"
 include "Replica.dfy"
 include "Auxilarily.dfy"
-include "Axioms.dfy"
+include "../proofs/Axioms.dfy"
 include "Invariants.dfy"
 
 

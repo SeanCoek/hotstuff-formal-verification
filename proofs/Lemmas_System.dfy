@@ -1,6 +1,6 @@
-include "Type.dfy"
-include "Replica.dfy"
-include "System.dfy"
+include "../specs/Type.dfy"
+include "../specs/Replica.dfy"
+include "../specs/System.dfy"
 include "Lemmas_Replica.dfy"
 
 

@@ -1,5 +1,4 @@
-// include "sets.dfy"
-include "../Auxilarily.dfy"
+include "../specs/Auxilarily.dfy"
 module M_ProofTactic
 {
     import opened M_Set

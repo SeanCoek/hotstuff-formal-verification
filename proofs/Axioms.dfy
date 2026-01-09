@@ -1,5 +1,5 @@
-include "Type.dfy"
-include "Auxilarily.dfy"
+include "../specs/Type.dfy"
+include "../specs/Auxilarily.dfy"
 
 module M_Axiom {
     import opened M_SpecTypes

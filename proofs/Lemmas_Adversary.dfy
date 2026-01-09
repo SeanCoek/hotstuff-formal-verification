@@ -1,10 +1,10 @@
-include "Replica.dfy"
-include "Adversary.dfy"
-include "System.dfy"
-include "Type.dfy"
-include "Auxilarily.dfy"
+include "../specs/Replica.dfy"
+include "../specs/Adversary.dfy"
+include "../specs/System.dfy"
+include "../specs/Type.dfy"
+include "../specs/Auxilarily.dfy"
 include "Axioms.dfy"
-include "common/proofs.dfy"
+include "../common/proofs.dfy"
 
 module M_Lemmas_Adversary {
 

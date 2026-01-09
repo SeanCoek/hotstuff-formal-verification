@@ -1,8 +1,8 @@
-include "Replica.dfy"
-include "Type.dfy"
-include "Auxilarily.dfy"
+include "../specs/Replica.dfy"
+include "../specs/Type.dfy"
+include "../specs/Auxilarily.dfy"
 include "Axioms.dfy"
-include "common/proofs.dfy"
+include "../common/proofs.dfy"
 
 
 /**

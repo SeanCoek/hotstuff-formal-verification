@@ -1,5 +1,5 @@
-include "Type.dfy"
-include "common/sets.dfy"
+include "../specs/Type.dfy"
+include "../common/sets.dfy"
 
 module M_AuxilarilyFunc {
     import opened M_SpecTypes

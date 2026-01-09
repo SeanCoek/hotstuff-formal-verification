@@ -1,11 +1,11 @@
-include "Type.dfy"
-include "System.dfy"
-include "Trace.dfy"
-include "Invariants.dfy"
-include "Replica.dfy"
-include "Auxilarily.dfy"
+include "../specs/Type.dfy"
+include "../specs/System.dfy"
+include "../specs/Trace.dfy"
+include "../specs/Invariants.dfy"
+include "../specs/Replica.dfy"
+include "../specs/Auxilarily.dfy"
 include "Lemmas.dfy"
-include "common/sets.dfy"
+include "../common/sets.dfy"
 
 
 /**

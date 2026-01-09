@@ -1,7 +1,7 @@
 include "Type.dfy"
 include "Auxilarily.dfy"
-include "Axioms.dfy"
-include "common/proofs.dfy"
+include "../proofs/Axioms.dfy"
+include "../common/proofs.dfy"
 include "Invariants.dfy"
 
 /**
