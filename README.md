@@ -1,5 +1,5 @@
 # hotstuff-formal-verification
-This repository is a formal model for verifying [HotStuff](https://dl.acm.org/doi/10.1145/3293611.3331591) consensus protocol, written in [Dafny](https://dafny.org/) language.
+This repository provides a formal model for verifying [HotStuff](https://dl.acm.org/doi/10.1145/3293611.3331591) consensus protocol, written in [Dafny](https://dafny.org/) language.
 
 This project is construted as follows.
 ```mermaid
