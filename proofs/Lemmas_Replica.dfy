@@ -322,6 +322,22 @@ module M_Lemmas_Replica {
         assert r'.msgReceived == r.msgReceived;
     }
 
+    lemma LemmaVarStableInDecide(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponDecide(r, r', outMsg)
+    ensures r'.viewNum == r.viewNum
+    ensures r'.prepareQC == r.prepareQC
+    ensures r'.commitQC == r.commitQC
+    ensures r'.id == r.id
+    ensures r'.msgReceived == r.msgReceived
+    {}
+
+    lemma LemmaOnlySendDecideRequestMsgInDecide(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponDecide(r, r', outMsg)
+    ensures outMsg != {} ==> forall m | m in outMsg :: ValidDecideMsg(m)
+    {}
+
 
     lemma LemmaValidationHoldsInPreCommitPhase(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
     requires ValidReplicaState(r)
@@ -450,54 +466,46 @@ module M_Lemmas_Replica {
     ensures ValidReplicaState(r')
     {
         var leader := leader(r.viewNum);
+        LemmaVarStableInDecide(r, r', outMsg);
         assert r'.viewNum > 0;
+        assert ValidQC(r'.prepareQC);
+        assert ValidQC(r'.commitQC);
+        assert r'.viewNum >= r'.prepareQC.viewNum;
+        assert r'.viewNum >= r'.commitQC.viewNum;
         assert && |r'.bc| > 0
                && r'.bc[0] == M_SpecTypes.Genesis_Block;
         
-        // assert r'.prepareQC.Cert? ==>
-        //                         && ValidQC(r'.prepareQC)
-        //                         && r'.prepareQC.cType == MT_Prepare
-        //                         && exists m | m in r'.msgReceived
-        //                                     ::
-        //                                     && m.justify == r'.prepareQC;
-        // assert (r'.prepareQC.Cert? ==>
-        //                         && ValidQC(r'.prepareQC)
-        //                         && r'.prepareQC.cType == MT_Prepare
-        //                         && exists m | m in r'.msgReceived
-        //                                     ::
-        //                                     && m.justify == r'.prepareQC
-            // ) by {
-            //     if leader == r.id {
-            //         if r'.prepareQC.Cert? {
-            //             assert ValidQC(r'.prepareQC);
-            //             // assert r'.prepareQC.cType == MT_Prepare;
-            //             // assert r'.msgReceived == r.msgReceived;
-            //         }
-            //     }
-            //     else {
-            //         if r'.prepareQC.Cert? {
-            //             assert ValidQC(r'.prepareQC);
-            //         }
-            //     }
-        // }
+        assert (r'.prepareQC.Cert? ==>
+                                    && ValidQC(r'.prepareQC)
+                                    && r'.prepareQC.cType == MT_Prepare
+                                    && (
+                                        || (exists m | m in r'.msgReceived
+                                                    ::
+                                                      && m.justify == r'.prepareQC
+                                                      && ValidPrecommitRequest(m)
+                                            )
+                                        || isInitialQC(r'.prepareQC)
+                                    )
+                );
+        assert (r'.commitQC.Cert? ==>
+                                    && ValidQC(r'.commitQC)
+                                    && r'.commitQC.cType == MT_PreCommit
+                                    && (
+                                        || (exists m | m in r'.msgReceived
+                                                    ::
+                                                      && m.justify == r'.commitQC
+                                                      && ValidCommitRequest(m)
+                                            )
+                                        || isInitialQC(r'.commitQC)
+                                    )
+                );
         
-        // assert (r'.commitQC.Cert? ==>
-        //                         && ValidQC(r'.commitQC)
-        //                         && r'.commitQC.cType == MT_PreCommit
-        //                         && exists m | m in r'.msgReceived
-        //                                     ::
-        //                                     && m.justify == r'.commitQC
-        //     );
 
         assert (|| r'.bc == [M_SpecTypes.Genesis_Block]
                 || (exists m | && m in r'.msgReceived
-                            // && m.mType.MT_Decide?
-                            && m.justify.Cert?
-                            && m.justify.cType.MT_Commit?
-                            && ValidQC(m.justify)
-                            // && m.justify.block.Block?
+                               && ValidDecideMsg(m)
                             ::
-                            r'.bc <= getAncestors(m.justify.block)
+                               r'.bc <= getAncestors(m.justify.block)
                 )
          ) by {
             if leader != r.id {
@@ -506,27 +514,18 @@ module M_Lemmas_Replica {
                 var maxSet := getMaxLengthSet(splitSets);
 
                 var matchQCs := getMatchQC(r.msgReceived, MT_Decide, MT_Commit, r.viewNum);
-                // assert |matchQCs| <= 1;
                 assert r.msgReceived <= r'.msgReceived;
                 if |matchQCs| > 0 {
                     // assert |matchQCs| == 1;
                     var m_qc :| m_qc in matchQCs;
                     var match_msg :| && match_msg in r.msgReceived
                                      && match_msg.justify == m_qc;
-                    // assert matchQCs <= r'.msgReceived;
                     var ancestors := getAncestors(m_qc.block);
-                    // if |ancestors| <= |r.bc| {
-                    //     assert r' == r;
-                    // }
                     assert (|| r'.bc == [M_SpecTypes.Genesis_Block]
                             || (exists m | && m in r'.msgReceived
-                                        // && m.mType.MT_Decide?
-                                        && m.justify.Cert?
-                                        && m.justify.cType.MT_Commit?
-                                        && ValidQC(m.justify)
-                                        // && m.justify.block.Block?
+                                           && ValidDecideMsg(m)
                                         ::
-                                        r'.bc <= getAncestors(m.justify.block)
+                                           r'.bc <= getAncestors(m.justify.block)
                                 )
                             );
                 } else {
@@ -535,7 +534,17 @@ module M_Lemmas_Replica {
             } else {
 
             }
-         }
+        }
+        
+        assert |r'.bc| > 0;
+        assert r'.bc[0] == M_SpecTypes.Genesis_Block;
+        assert r'.msgSent == r.msgSent + outMsg;
+        LemmaOnlySendDecideRequestMsgInDecide(r, r', outMsg);
+        assert (forall m | m in r'.msgSent
+                        ::
+                           !(ValidDecideMsg(m))
+                           ==>
+                           m in r.msgSent);
     }
 
 

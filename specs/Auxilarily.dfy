@@ -838,6 +838,17 @@ module M_AuxilarilyFunc {
         signers1 * signers2
     }
 
+    lemma LemmaGetSameSignersInTwoQCIsInBothQC(qc1 : Cert, qc2 : Cert, r : Address, signers1 : set<Address>, signers2 : set<Address>)
+    requires ValidQC(qc1) && ValidQC(qc2)
+    requires r in getSameSignersInTwoQC(qc1, qc2)
+    requires signers1 == getMajoritySignerInValidQC(qc1)
+    requires signers2 == getMajoritySignerInValidQC(qc2)
+    ensures r in signers1 * signers2
+    {
+
+    }
+
+
     function{:axiom} filterDoubleVote(msgs : set<Msg>) : (r : set<Msg>)
     requires forall m | m in msgs :: ValidVoteMsg(m)
     requires forall m1, m2 | && m1 in msgs 

@@ -139,6 +139,10 @@ module M_Thereom {
                         var r :| && r in getSameSignersInTwoQC(m2_p.justify, m1.justify)
                                  && IsHonest(ss, r);
                         // Replica `r` will not send a prepare vote for a block conflicting a commit QC `m1.justify` if it has voted this QC before.
+                        var signers1 := getMajoritySignerInValidQC(m1.justify);
+                        var signers2 := getMajoritySignerInValidQC(m2_p.justify);
+                        assert r in getSameSignersInTwoQC(m2_p.justify, m1.justify);
+                        LemmaGetSameSignersInTwoQCIsInBothQC(m1.justify, m2_p.justify, r, signers1, signers2);
                         LemmaHonestNodeWontVoteConflictInPrepare(ss, r, m1.justify, m2_p.justify);
                         assert extension(m2_p.justify.block, m1.justify.block);
                     }
@@ -148,6 +152,10 @@ module M_Thereom {
                         LemmaExistSameHonestNodeInTwoValidQC(ss, m2.justify, m1_p.justify);
                         var r :| && r in getSameSignersInTwoQC(m1_p.justify, m2.justify)
                                  && IsHonest(ss, r);
+                        var signers1 := getMajoritySignerInValidQC(m2.justify);
+                        var signers2 := getMajoritySignerInValidQC(m1_p.justify);
+                        assert r in getSameSignersInTwoQC(m1_p.justify, m2.justify);
+                        LemmaGetSameSignersInTwoQCIsInBothQC(m2.justify, m1_p.justify, r, signers1, signers2);
                         LemmaHonestNodeWontVoteConflictInPrepare(ss, r, m2.justify, m1_p.justify);
                         assert extension(m1_p.justify.block, m2.justify.block);
                     }
