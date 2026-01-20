@@ -49,8 +49,8 @@ module M_Adversary {
             msgReceived := msgReceived
         )
         && (forall m | m in outMsg ::
-                    || m in msgReceived // keep the recieved message unchanged and forward to other nodes.
-                    // TODO: further faulty behavirous can be updated here, using disjunction `||`
+                    || m in msgReceived // relay received messages to other nodes.
+                    || m.sender in a.byz_nodes // send new messages with signatures of Byzantine nodes
             )
     }
 }
