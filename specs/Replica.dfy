@@ -21,7 +21,7 @@ module M_Replica {
      *  bc : local blockchain
      *  viewNum : view number
      *  prepareQC : Quorum Certificate for prepare message
-     *  commitQC : Qurum Certificate for pre-commit message, also refers to "lockQC" at the HotStuff paper
+     *  lockedQC : Qurum Certificate for pre-commit message
      *  msgReceived : all the messages recieved by replica
      *  msgSent : all the messages sent by replica
      */
@@ -30,7 +30,7 @@ module M_Replica {
         bc : Blockchain,
         viewNum : nat,
         prepareQC : Cert,
-        commitQC : Cert,
+        lockedQC : Cert,
         msgReceived : set<Msg>,
         msgSent : set<Msg>
     )
@@ -54,7 +54,7 @@ module M_Replica {
         && r.bc == [M_SpecTypes.Genesis_Block]
         && r.viewNum == 1
         && r.prepareQC == getInitialQC(MT_Prepare)
-        && r.commitQC == getInitialQC(MT_PreCommit)
+        && r.lockedQC == getInitialQC(MT_PreCommit)
         && r.msgReceived == {}
         && r.msgSent == {getInitialMsg(id)}
     }
@@ -119,7 +119,7 @@ module M_Replica {
         if leader == r.id // Leader
         then
             var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
-            var votes := getVotesForSafeProposals(matchProposals, r.commitQC, r.id);
+            var votes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
             var filteredVotes := proposalVoteFilter(votes);
             var matchMsgs := getMatchMsg(r.msgReceived, MT_NewView, r.viewNum-1);
             if |matchMsgs| > 0
@@ -134,7 +134,7 @@ module M_Replica {
                 && r' == r.(msgSent := r.msgSent + filteredVotes)
         else
             var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
-            var votes := getVotesForSafeProposals(matchProposals, r.commitQC, r.id);
+            var votes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
             var filteredVotes := proposalVoteFilter(votes);
             && outMsg == filteredVotes
             && r' == r.(msgSent := r.msgSent + outMsg)
@@ -239,11 +239,11 @@ module M_Replica {
                     var commitMsg := Msg(r.id, MT_Commit, r.viewNum, EmptyBlock, precommitQC, SigNone, CertNone);
 
                     && outMsg == {vote, commitMsg}
-                    && r' == r.(commitQC := m_qc,
+                    && r' == r.(lockedQC := m_qc,
                                 msgSent := r.msgSent + {vote, commitMsg})
                 else
                     && outMsg == {vote}
-                    && r' == r.(commitQC := m_qc,
+                    && r' == r.(lockedQC := m_qc,
                                 msgSent := r.msgSent + {vote})
             else    // Only doing leader's work
                 if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|) && |maxSet| > 0
@@ -263,7 +263,7 @@ module M_Replica {
                 var m_qc :| m_qc in matchQCs;
                 var vote := buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
                 && outMsg == {vote}
-                && r' == r.(commitQC := m_qc,
+                && r' == r.(lockedQC := m_qc,
                             msgSent := r.msgSent + {vote})
             else 
                 && outMsg == {}
@@ -377,9 +377,9 @@ module M_Replica {
         // If a replica accepted a Prepare certificate,
         // then it must received a PreCommit Message from the leader before, together with a valid Prepare certificate
         && ValidQC(r.prepareQC)
-        && ValidQC(r.commitQC)
+        && ValidQC(r.lockedQC)
         && r.viewNum >= r.prepareQC.viewNum
-        && r.viewNum >= r.commitQC.viewNum
+        && r.viewNum >= r.lockedQC.viewNum
         && (r.prepareQC.Cert? ==>
                                 && ValidQC(r.prepareQC)
                                 && r.prepareQC.cType == MT_Prepare
@@ -391,16 +391,16 @@ module M_Replica {
                                      || isInitialQC(r.prepareQC)
                                 )
             )
-        // If a replica accepted a Precommit certificate (set it to its local variable `commitQC`),
+        // If a replica accepted a Precommit certificate (set it to its local variable `lockedQC`),
         // then it must received a Commit Message from the leader before, together with a valid Precommit certificate
-        && (r.commitQC.Cert? ==>
-                                && ValidQC(r.commitQC)
-                                && r.commitQC.cType == MT_PreCommit
+        && (r.lockedQC.Cert? ==>
+                                && ValidQC(r.lockedQC)
+                                && r.lockedQC.cType == MT_PreCommit
                                 && (|| (exists m | m in r.msgReceived
                                             ::
-                                            && m.justify == r.commitQC
+                                            && m.justify == r.lockedQC
                                             && ValidCommitRequest(m))
-                                    || isInitialQC(r.commitQC)
+                                    || isInitialQC(r.lockedQC)
                                 )
             )
         // If a replica received a Decide Message with a valid certificate,

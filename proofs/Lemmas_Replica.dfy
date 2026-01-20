@@ -298,7 +298,7 @@ module M_Lemmas_Replica {
     requires ValidReplicaState(r)
     requires UponPreCommit(r, r', outMsg)
     ensures r'.viewNum == r.viewNum
-    ensures r'.commitQC == r.commitQC
+    ensures r'.lockedQC == r.lockedQC
     ensures r'.bc == r.bc
     ensures r'.id == r.id
     ensures r'.msgReceived == r.msgReceived
@@ -327,7 +327,7 @@ module M_Lemmas_Replica {
     requires UponDecide(r, r', outMsg)
     ensures r'.viewNum == r.viewNum
     ensures r'.prepareQC == r.prepareQC
-    ensures r'.commitQC == r.commitQC
+    ensures r'.lockedQC == r.lockedQC
     ensures r'.id == r.id
     ensures r'.msgReceived == r.msgReceived
     {}
@@ -469,9 +469,9 @@ module M_Lemmas_Replica {
         LemmaVarStableInDecide(r, r', outMsg);
         assert r'.viewNum > 0;
         assert ValidQC(r'.prepareQC);
-        assert ValidQC(r'.commitQC);
+        assert ValidQC(r'.lockedQC);
         assert r'.viewNum >= r'.prepareQC.viewNum;
-        assert r'.viewNum >= r'.commitQC.viewNum;
+        assert r'.viewNum >= r'.lockedQC.viewNum;
         assert && |r'.bc| > 0
                && r'.bc[0] == M_SpecTypes.Genesis_Block;
         
@@ -487,16 +487,16 @@ module M_Lemmas_Replica {
                                         || isInitialQC(r'.prepareQC)
                                     )
                 );
-        assert (r'.commitQC.Cert? ==>
-                                    && ValidQC(r'.commitQC)
-                                    && r'.commitQC.cType == MT_PreCommit
+        assert (r'.lockedQC.Cert? ==>
+                                    && ValidQC(r'.lockedQC)
+                                    && r'.lockedQC.cType == MT_PreCommit
                                     && (
                                         || (exists m | m in r'.msgReceived
                                                     ::
-                                                      && m.justify == r'.commitQC
+                                                      && m.justify == r'.lockedQC
                                                       && ValidCommitRequest(m)
                                             )
-                                        || isInitialQC(r'.commitQC)
+                                        || isInitialQC(r'.lockedQC)
                                     )
                 );
         
