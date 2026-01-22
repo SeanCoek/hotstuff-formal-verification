@@ -805,6 +805,38 @@ module M_AuxilarilyFunc {
                 :: v
     }
 
+    predicate isVotedInView(msgSent : set<Msg>, vType : MsgType, view : nat)
+    {
+        exists v | && v in msgSent
+                ::
+                   && ValidVoteMsg(v)
+                   && v.mType == vType
+                   && v.viewNum == view
+    }
+
+    function getVotesIfUnVoted(votes : set<Msg>, voted : bool) : (r : set<Msg>)
+    {
+        var empty := {};
+        if voted
+        then
+            empty
+        else
+            votes
+    }
+
+    function onlyOneVote(votes : set<Msg>) : (r : set<Msg>)
+    requires forall v | v in votes :: ValidVoteMsg(v)
+    ensures forall v | v in r :: v in votes
+    ensures |r| == 1 || |r| == 0
+    {
+        var empty := {};
+        if |votes| != 1
+        then
+            empty
+        else
+            votes
+    }
+
     predicate predHonestNodeInTwoQC(honest : set<Address>, qc1 : Cert, qc2 : Cert, r : Address)
     requires ValidQC(qc1) && ValidQC(qc2)
     {

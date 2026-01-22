@@ -47,10 +47,10 @@ module M_Lemma {
                         && ValidMsg(m)
                         && m.justify == qc)
     
-    lemma{:axiom} LemmaHonestNodeOnlyVoteOnceInOneView(
-                                                        ss : SystemState,
-                                                        r : Address
-                                                        )
+    lemma LemmaHonestNodeOnlyVoteOnceInOneView(
+                                                ss : SystemState,
+                                                r : Address
+                                                )
     requires Reachable(ss)
     requires IsHonest(ss, r)
     ensures forall v1, v2 | && v1 in ss.nodeStates[r].msgSent
@@ -62,7 +62,9 @@ module M_Lemma {
                             && v1.viewNum == v2.viewNum
                             ==>
                             v1 == v2
-
+    {
+        LemmaReachableStateIsValid(ss);
+    }
 
     lemma LemmaExistVoteMsgIfCertificateFormed(ss : SystemState)
     requires Reachable(ss)

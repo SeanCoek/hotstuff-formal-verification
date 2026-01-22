@@ -116,11 +116,14 @@ module M_Replica {
     requires ValidReplicaState(r)
     {
         var leader := leader(r.viewNum);
+        var isVoted := isVotedInView(r.msgSent, MT_Prepare, r.viewNum);
         if leader == r.id // Leader
         then
             var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
             var votes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
             var filteredVotes := proposalVoteFilter(votes);
+            var filteredVotes := onlyOneVote(filteredVotes);
+            var filteredVotes := getVotesIfUnVoted(filteredVotes, isVoted);
             var matchMsgs := getMatchMsg(r.msgReceived, MT_NewView, r.viewNum-1);
             if |matchMsgs| > 0
             then
@@ -136,6 +139,8 @@ module M_Replica {
             var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
             var votes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
             var filteredVotes := proposalVoteFilter(votes);
+            var filteredVotes := onlyOneVote(filteredVotes);
+            var filteredVotes := getVotesIfUnVoted(filteredVotes, isVoted);
             && outMsg == filteredVotes
             && r' == r.(msgSent := r.msgSent + outMsg)
     }
@@ -145,14 +150,17 @@ module M_Replica {
     {
         var leader := leader(r.viewNum);
         assert r.prepareQC.Cert? ==> ValidQC(r.prepareQC);
+        var isVoted := isVotedInView(r.msgSent, MT_PreCommit, r.viewNum);
         if leader == r.id // Leader
         then
             // Leader doing leader and replica's work
             var matchQCs := getMatchQC(r.msgReceived, MT_PreCommit, MT_Prepare, r.viewNum);
-            if |matchQCs| > 0 
+            // if |matchQCs| > 0 
+            if |matchQCs| == 1 
             then 
                 var m_qc :| m_qc in matchQCs;
-                var vote := buildVoteMsg(r.id, MT_PreCommit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                var votes := {buildVoteMsg(r.id, MT_PreCommit, m_qc.block, CertNone, r.viewNum, CertNone, r.id)};
+                var votes := getVotesIfUnVoted(votes, isVoted);
                 var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_Prepare, r.viewNum);
 
                 var splitSets := splitMsgByBlocks(matchMsgs);
@@ -166,13 +174,13 @@ module M_Replica {
                     var sgns := ExtractSignatrues(filtedMaxSet);
                     var prepareQC := Cert(MT_Prepare, m.viewNum, m.block, sgns);
                     var precommitMsg := Msg(r.id, MT_PreCommit, r.viewNum, EmptyBlock, prepareQC, SigNone, CertNone);
-                    && outMsg == {vote, precommitMsg}
+                    && outMsg == votes + {precommitMsg}
                     && r' == r.(prepareQC := m_qc,
-                                msgSent := r.msgSent + {vote, precommitMsg})
+                                msgSent := r.msgSent + votes + {precommitMsg})
                 else
-                    && outMsg == {vote}
+                    && outMsg == votes
                     && r' == r.(prepareQC := m_qc,
-                                msgSent := r.msgSent + {vote})
+                                msgSent := r.msgSent + votes)
             else    // Only doing leader's work
                 var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_Prepare, r.viewNum);
                 var splitSets := splitMsgByBlocks(matchMsgs);
@@ -193,7 +201,8 @@ module M_Replica {
                     && outMsg == {}
         else    // Only doing replica's work
             var matchQCs := getMatchQC(r.msgReceived, MT_PreCommit, MT_Prepare, r.viewNum);
-            if |matchQCs| > 0 
+            // if |matchQCs| > 0 
+            if |matchQCs| == 1 
             then 
                 var m_qc :| m_qc in matchQCs;
                 assert exists m | m in r.msgReceived
@@ -201,12 +210,13 @@ module M_Replica {
                                   && ValidMsg(m)
                                   && m.justify == m_qc;
                                 
-                var vote := buildVoteMsg(r.id, MT_PreCommit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                var votes := {buildVoteMsg(r.id, MT_PreCommit, m_qc.block, CertNone, r.viewNum, CertNone, r.id)};
                 NoOuterClient();
+                var votes := getVotesIfUnVoted(votes, isVoted);
 
-                && outMsg == {vote}
+                && outMsg == votes
                 && r' == r.(prepareQC := m_qc,
-                            msgSent := r.msgSent + {vote})
+                            msgSent := r.msgSent + votes)
                 && ValidQC(r'.prepareQC)
             else 
                 && outMsg == {}
@@ -218,6 +228,7 @@ module M_Replica {
     requires ValidReplicaState(r)
     {
         var leader := leader(r.viewNum);
+        var isVoted := isVotedInView(r.msgSent, MT_Commit, r.viewNum);
         var matchQCs := getMatchQC(r.msgReceived, MT_Commit, MT_PreCommit, r.viewNum);
         if leader == r.id // Leader
         then
@@ -225,11 +236,12 @@ module M_Replica {
             var matchMsgs := getMatchVoteMsg(r.msgReceived, MT_PreCommit, r.viewNum);
             var splitSets := splitMsgByBlocks(matchMsgs);
             var maxSet := getMaxLengthSet(splitSets);
-            if |matchQCs| > 0 
+            // if |matchQCs| > 0 
+            if |matchQCs| == 1
             then 
                 var m_qc :| m_qc in matchQCs;
-
-                var vote := buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
+                var votes := {buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id)};
+                var votes := getVotesIfUnVoted(votes, isVoted);
                 if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|)
                 then
                     Axiom_Common_Constraints();
@@ -238,13 +250,13 @@ module M_Replica {
                     var precommitQC := Cert(MT_PreCommit, m.viewNum, m.block, sgns);
                     var commitMsg := Msg(r.id, MT_Commit, r.viewNum, EmptyBlock, precommitQC, SigNone, CertNone);
 
-                    && outMsg == {vote, commitMsg}
+                    && outMsg == votes + {commitMsg}
                     && r' == r.(lockedQC := m_qc,
-                                msgSent := r.msgSent + {vote, commitMsg})
+                                msgSent := r.msgSent + votes + {commitMsg})
                 else
-                    && outMsg == {vote}
+                    && outMsg == votes
                     && r' == r.(lockedQC := m_qc,
-                                msgSent := r.msgSent + {vote})
+                                msgSent := r.msgSent + votes)
             else    // Only doing leader's work
                 if |maxSet| >= quorum(|M_SpecTypes.All_Nodes|) && |maxSet| > 0
                 then
@@ -258,13 +270,15 @@ module M_Replica {
                     && r' == r
                     && outMsg == {}
         else    // Only doing replica's work
-            if |matchQCs| > 0 
+            // if |matchQCs| > 0 
+            if |matchQCs| == 1
             then 
                 var m_qc :| m_qc in matchQCs;
-                var vote := buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id);
-                && outMsg == {vote}
+                var votes := {buildVoteMsg(r.id, MT_Commit, m_qc.block, CertNone, r.viewNum, CertNone, r.id)};
+                var votes := getVotesIfUnVoted(votes, isVoted);
+                && outMsg == votes
                 && r' == r.(lockedQC := m_qc,
-                            msgSent := r.msgSent + {vote})
+                            msgSent := r.msgSent + votes)
             else 
                 && outMsg == {}
                 && r' == r
@@ -437,6 +451,15 @@ module M_Replica {
                             m1.viewNum > m2.viewNum
                             ==>
                             extension(m1.block, m2.justify.block))
+        && (forall m1, m2 | && m1 in r.msgSent
+                            && m2 in r.msgSent
+                            && ValidVoteMsg(m1)
+                            && ValidVoteMsg(m2)
+                         ::
+                            (&& m1.viewNum == m2.viewNum
+                             && m1.mType == m2.mType)
+                            ==>
+                            m1 == m2)
     }
 
     function getMsgReceiveReplica(r : ReplicaState) : (m : set<Msg>)
