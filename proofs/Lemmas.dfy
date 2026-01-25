@@ -382,7 +382,7 @@ module M_Lemma {
                 msgReceived := r.msgReceived + inMsg
             );
             var s : seq<ReplicaState>, o : seq<set<Msg>> :|
-                && |s| > 2
+                && |s| >= 2
                 && |o| == |s| - 1
                 && s[0] == replicaWithNewMsgReceived
                 && s[|s|-1] == r'

@@ -28,12 +28,21 @@ module M_Thereom {
         || bc2 <= bc1
     }
 
-    ghost predicate consistency(t : Trace)
+    // ghost predicate consistency(t : Trace)
+    // {
+    //     forall i, r1, r2 |
+    //                 && IsHonest(t(i), r1)
+    //                 && IsHonest(t(i), r2)
+    //             :: consistentBlockchains(t(i).nodeStates[r1].bc, t(i).nodeStates[r2].bc)
+    // }
+
+    ghost predicate consistency(ss : SystemState)
     {
-        forall i, r1, r2 |
-                    && IsHonest(t(i), r1)
-                    && IsHonest(t(i), r2)
-                :: consistentBlockchains(t(i).nodeStates[r1].bc, t(i).nodeStates[r2].bc)
+        forall r1, r2 | 
+                            && IsHonest(ss, r1)
+                            && IsHonest(ss, r2)
+                         :: 
+                            consistentBlockchains(ss.nodeStates[r1].bc, ss.nodeStates[r2].bc)
     }
 
     /**
@@ -44,11 +53,7 @@ module M_Thereom {
     */
     lemma LemmaReachableSystemStateIsConsistent(ss : SystemState)
     requires Reachable(ss)
-    ensures forall r1, r2 | 
-                            && IsHonest(ss, r1)
-                            && IsHonest(ss, r2)
-                         :: 
-                            consistentBlockchains(ss.nodeStates[r1].bc, ss.nodeStates[r2].bc)
+    ensures consistency(ss)
     {
         forall r1, r2 | 
                         && IsHonest(ss, r1)
@@ -62,13 +67,13 @@ module M_Thereom {
             if s1.bc != [M_SpecTypes.Genesis_Block] && s2.bc != [M_SpecTypes.Genesis_Block] {
                 // local blockchain in s1 and s2 are neither the initial blockchain (i.e. blockchain of one block `Genesis_Block`)
                 // which means s1 and s2 must have received a message with a commit QC and update their local blockchain accordingly.
-                assert exists m1 | && m1 in s1.msgReceived
-                                    && m1.justify.Cert?
-                                    && m1.justify.cType == MT_Commit
-                                    && ValidQC(m1.justify)
-                                    && m1.justify.block.Block?
-                                ::
-                                    s1.bc <= getAncestors(m1.justify.block);
+                // assert exists m1 | && m1 in s1.msgReceived
+                //                     && m1.justify.Cert?
+                //                     && m1.justify.cType == MT_Commit
+                //                     && ValidQC(m1.justify)
+                //                     && m1.justify.block.Block?
+                //                 ::
+                //                     s1.bc <= getAncestors(m1.justify.block);
                 var m1 :| && m1 in s1.msgReceived
                                     && m1.justify.Cert?
                                     && m1.justify.cType == MT_Commit
@@ -76,13 +81,13 @@ module M_Thereom {
                                     && m1.justify.block.Block?
                                     && s1.bc <= getAncestors(m1.justify.block);
 
-                assert exists m2 | && m2 in s2.msgReceived
-                                   && m2.justify.Cert?
-                                   && m2.justify.cType.MT_Commit?
-                                   && ValidQC(m2.justify)
-                                   && m2.justify.block.Block?
-                                ::
-                                   s2.bc <= getAncestors(m2.justify.block);
+                // assert exists m2 | && m2 in s2.msgReceived
+                //                    && m2.justify.Cert?
+                //                    && m2.justify.cType.MT_Commit?
+                //                    && ValidQC(m2.justify)
+                //                    && m2.justify.block.Block?
+                //                 ::
+                //                    s2.bc <= getAncestors(m2.justify.block);
                 var m2 :| && m2 in s2.msgReceived
                                    && m2.justify.Cert?
                                    && m2.justify.cType.MT_Commit?
@@ -104,22 +109,23 @@ module M_Thereom {
                 // Quorum Certificate is formed in a chain manner,
                 // more visually, QC(prepare) -> QC(precommit) -> QC(commit)
                 // Hence, we have a corresponding prepare QC for every commit QC.
-                assert exists m1_p : Msg :: && m1_p in ss.msgSent
-                                            && ValidQC(m1_p.justify)
-                                            && m1_p.justify.cType == MT_Prepare
-                                            && m1_p.justify.block == m1.justify.block
-                                            && m1_p.justify.viewNum == m1.justify.viewNum by {
-                    LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
-                }
+                // assert exists m1_p : Msg :: && m1_p in ss.msgSent
+                //                             && ValidQC(m1_p.justify)
+                //                             && m1_p.justify.cType == MT_Prepare
+                //                             && m1_p.justify.block == m1.justify.block
+                //                             && m1_p.justify.viewNum == m1.justify.viewNum by {
+                //     LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
+                // }
 
-                assert exists m2_p : Msg :: && m2_p in ss.msgSent
-                                            && ValidQC(m2_p.justify)
-                                            && m2_p.justify.cType == MT_Prepare
-                                            && m2_p.justify.block == m2.justify.block
-                                            && m2_p.justify.viewNum == m2.justify.viewNum by {
-                    LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
-                }
+                // assert exists m2_p : Msg :: && m2_p in ss.msgSent
+                //                             && ValidQC(m2_p.justify)
+                //                             && m2_p.justify.cType == MT_Prepare
+                //                             && m2_p.justify.block == m2.justify.block
+                //                             && m2_p.justify.viewNum == m2.justify.viewNum by {
+                //     LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
+                // }
 
+                LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
                 var m1_p :| && m1_p in ss.msgSent
                                             && ValidQC(m1_p.justify)
                                             && m1_p.justify.cType == MT_Prepare

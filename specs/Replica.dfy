@@ -78,7 +78,7 @@ module M_Replica {
             msgReceived := allMsgReceived
         );
         exists s : seq<ReplicaState>, o : seq<set<Msg>> ::
-                && |s| > 2
+                && |s| >= 2
                 && |o| == |s| - 1
                 && s[0] == replicaWithNewMsgReceived
                 && s[|s|-1] == r'
@@ -388,13 +388,21 @@ module M_Replica {
     ghost predicate ValidReplicaState(r : ReplicaState)
     {
         && r.viewNum > 0
-        // If a replica accepted a Prepare certificate,
-        // then it must received a PreCommit Message from the leader before, together with a valid Prepare certificate
+        && Inv_PrepareQC(r)
+        && Inv_LockedQC(r)
+        && Inv_LocalBC(r)
+        && Inv_ValidationOnMsgSent(r)
+        && Inv_Votes(r)
+    }
+
+    predicate Inv_PrepareQC(r : ReplicaState)
+    // If a replica accepted a Prepare certificate,
+    // then it must received a PreCommit Message from the leader before, together with a valid Prepare certificate,
+    // or the prepare certificate is the initial certificate set up at the begining stage of the system
+    {
         && ValidQC(r.prepareQC)
-        && ValidQC(r.lockedQC)
         && r.viewNum >= r.prepareQC.viewNum
-        && r.viewNum >= r.lockedQC.viewNum
-        && (r.prepareQC.Cert? ==>
+        &&(r.prepareQC.Cert? ==>
                                 && ValidQC(r.prepareQC)
                                 && r.prepareQC.cType == MT_Prepare
                                 && ( || (exists m | m in r.msgReceived
@@ -405,8 +413,13 @@ module M_Replica {
                                      || isInitialQC(r.prepareQC)
                                 )
             )
-        // If a replica accepted a Precommit certificate (set it to its local variable `lockedQC`),
-        // then it must received a Commit Message from the leader before, together with a valid Precommit certificate
+    }
+
+    predicate Inv_LockedQC(r : ReplicaState)
+    // Similar to invPrepareQC()
+    {  
+        && ValidQC(r.lockedQC)
+        && r.viewNum >= r.lockedQC.viewNum
         && (r.lockedQC.Cert? ==>
                                 && ValidQC(r.lockedQC)
                                 && r.lockedQC.cType == MT_PreCommit
@@ -416,9 +429,14 @@ module M_Replica {
                                             && ValidCommitRequest(m))
                                     || isInitialQC(r.lockedQC)
                                 )
-            )
-        // If a replica received a Decide Message with a valid certificate,
-        // then it should always update its local blockchain accordingly.
+        )
+    }
+
+    predicate Inv_LocalBC(r : ReplicaState)
+    // Invariants of local blockchain
+    // If a replica received a Decide Message with a valid certificate,
+    // then it should always update its local blockchain accordingly.
+    {
         && (|| r.bc == [M_SpecTypes.Genesis_Block]
             || (exists m | && m in r.msgReceived
                            && ValidDecideMsg(m)
@@ -428,7 +446,16 @@ module M_Replica {
         )
         && |r.bc| > 0
         && r.bc[0] == M_SpecTypes.Genesis_Block
+    }
+
+    predicate Inv_ValidationOnMsgSent(r : ReplicaState)
+    {
         && (forall m | m in r.msgSent :: ValidMsg(m))
+    }
+
+    predicate Inv_Votes(r : ReplicaState)
+    // Invariants about replica's vote
+    {
         && (forall m | && m in r.msgSent
                        && ValidPrecommitVote(m)
                     :: 
