@@ -207,6 +207,11 @@ module M_Lemma {
         LemmaExistValidPrepareQCForEveryValidPrecommitQC(ss);
     }
 
+
+    /**
+        If hoenst node (@param : r) has voted in a commit qc (@param : qc1_commit),
+        it wont vote for any conflicting prepare qc (@param : qc2_prepare) in later views.
+     */
     lemma LemmaHonestNodeWontVoteConflictInPrepare(
         ss : SystemState,
         r : Address,
