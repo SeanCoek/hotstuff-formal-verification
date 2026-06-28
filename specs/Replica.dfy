@@ -125,7 +125,8 @@ module M_Replica {
             var filteredVotes := onlyOneVote(filteredVotes);
             var filteredVotes := getVotesIfUnVoted(filteredVotes, isVoted);
             var matchMsgs := getMatchMsg(r.msgReceived, MT_NewView, r.viewNum-1);
-            if |matchMsgs| > 0
+            // if |matchMsgs| > 0
+            if |matchMsgs| >= quorum(|M_SpecTypes.All_Nodes|)
             then
                 var highQC := getHighQC(matchMsgs);
                 var proposal := getNewBlock(highQC.block);
