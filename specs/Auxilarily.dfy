@@ -776,6 +776,9 @@ module M_AuxilarilyFunc {
     function getVotesForSafeProposals(proposals : set<Msg>, lockedQC : Cert, id : Address) : (votes : set<Msg>)
     requires forall p | p in proposals :: ValidProposal(p)
     requires ValidQC(lockedQC) || lockedQC.CertNone?
+    ensures forall vote | vote in votes ::
+                exists proposal | proposal in proposals ::
+                    vote == voteForProposal(proposal, lockedQC, id)
     {
         set vote | vote in proposals
                 :: voteForProposal(vote, lockedQC, id)
@@ -784,6 +787,14 @@ module M_AuxilarilyFunc {
     function voteForProposal(proposal : Msg, lockedQC : Cert, id : Address) : (vote : Msg)
     requires ValidProposal(proposal)
     requires ValidQC(lockedQC) || lockedQC.CertNone?
+    ensures vote.block.Block? ==>
+                && vote == buildVoteMsg(id, MT_Prepare, proposal.block, CertNone, proposal.viewNum, lockedQC, id)
+                && vote.lockedQC == lockedQC
+                && lockedQC.Cert?
+                && vote.block == proposal.block
+                && vote.viewNum == proposal.viewNum
+                && extension(proposal.block, proposal.justify.block)
+                && safeNode(proposal.block, proposal.justify, lockedQC)
     {
         if 
             && extension(proposal.block, proposal.justify.block) 
@@ -798,10 +809,12 @@ module M_AuxilarilyFunc {
     function proposalVoteFilter(votes : set<Msg>) : (r : set<Msg>)
     requires forall v | v in votes :: v.partialSig.Signature?
     ensures forall v | v in r :: ValidMsg(v)
+    ensures r <= votes
     {
         set v | && v in votes
                 && ValidMsg(v)
-                && v.block.EmptyBlock? && v.partialSig.block.EmptyBlock?
+                && !v.block.EmptyBlock?
+                && !v.partialSig.block.EmptyBlock?
                 :: v
     }
 
@@ -815,6 +828,9 @@ module M_AuxilarilyFunc {
     }
 
     function getVotesIfUnVoted(votes : set<Msg>, voted : bool) : (r : set<Msg>)
+    ensures r <= votes
+    ensures voted ==> r == {}
+    ensures !voted ==> r == votes
     {
         var empty := {};
         if voted
@@ -828,6 +844,7 @@ module M_AuxilarilyFunc {
     requires forall v | v in votes :: ValidVoteMsg(v)
     ensures forall v | v in r :: v in votes
     ensures |r| == 1 || |r| == 0
+    ensures r == votes || r == {}
     {
         var empty := {};
         if |votes| != 1

@@ -16,6 +16,7 @@ module M_Lemmas_Replica {
     import opened M_AuxilarilyFunc
     import opened M_Axiom
     import opened M_ProofTactic
+    import opened M_Set
 
     ghost predicate ValidReplicaNextSubSeq(s : seq<ReplicaState>, o : seq<set<Msg>>)
     {
@@ -286,12 +287,137 @@ module M_Lemmas_Replica {
         LemmaReplicaNextSubIsValid(r, r', outMsg);
     }
 
+    lemma LemmaAtMostOneValidVoteAfterAddingNonVote(
+        votes : set<Msg>,
+        nonVote : Msg)
+    requires |votes| == 0 || |votes| == 1
+    requires !ValidVoteMsg(nonVote)
+    ensures forall m1, m2 |
+                && m1 in votes + {nonVote}
+                && m2 in votes + {nonVote}
+                && ValidVoteMsg(m1)
+                && ValidVoteMsg(m2)
+            :: m1 == m2
+    {
+        LemmaSetAtMostOneElementHasUniqueElements(votes);
+        forall m1, m2 |
+            && m1 in votes + {nonVote}
+            && m2 in votes + {nonVote}
+            && ValidVoteMsg(m1)
+            && ValidVoteMsg(m2)
+        ensures m1 == m2
+        {
+            assert m1 != nonVote;
+            assert m2 != nonVote;
+            assert m1 in votes;
+            assert m2 in votes;
+        }
+    }
+
+    lemma LemmaPrepareOutputVoteShape(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponPrepare(r, r', outMsg)
+    ensures forall m | m in outMsg && ValidVoteMsg(m) ::
+                && ValidPrepareVote(m)
+                && m.viewNum == r.viewNum
+    {
+    }
+
+    lemma LemmaPrepareOutputContainsAtMostOneVote(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponPrepare(r, r', outMsg)
+    ensures forall m1, m2 |
+                && m1 in outMsg
+                && m2 in outMsg
+                && ValidVoteMsg(m1)
+                && ValidVoteMsg(m2)
+            :: m1 == m2
+    {
+        var isVoted := isVotedInView(r.msgSent, MT_Prepare, r.viewNum);
+        var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
+        var candidateVotes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
+        var validVotes := proposalVoteFilter(candidateVotes);
+        var oneVote := onlyOneVote(validVotes);
+        var finalVotes := getVotesIfUnVoted(oneVote, isVoted);
+
+        LemmaSubsetCardinality(finalVotes, oneVote);
+        assert |finalVotes| == 0 || |finalVotes| == 1;
+        LemmaSetAtMostOneElementHasUniqueElements(finalVotes);
+
+        if leader(r.viewNum) == r.id {
+            var matchMsgs := getMatchMsg(r.msgReceived, MT_NewView, r.viewNum-1);
+            if |matchMsgs| >= quorum(|M_SpecTypes.All_Nodes|) {
+                var highQC := getHighQC(matchMsgs);
+                var proposal := getNewBlock(highQC.block);
+                var proposeMsg := Msg(r.id, MT_Prepare, r.viewNum, proposal, highQC, SigNone, CertNone);
+                assert !ValidVoteMsg(proposeMsg);
+                LemmaAtMostOneValidVoteAfterAddingNonVote(finalVotes, proposeMsg);
+            }
+        }
+    }
+
+    lemma LemmaPrepareOutputContainsNoVoteAfterVoting(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponPrepare(r, r', outMsg)
+    requires isVotedInView(r.msgSent, MT_Prepare, r.viewNum)
+    ensures forall m | m in outMsg :: !ValidVoteMsg(m)
+    {
+    }
+
+    lemma LemmaPrepareOutputPreservesVoteUniqueness(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponPrepare(r, r', outMsg)
+    ensures forall m1, m2 |
+                && m1 in r'.msgSent
+                && m2 in r'.msgSent
+                && ValidVoteMsg(m1)
+                && ValidVoteMsg(m2)
+                && m1.viewNum == m2.viewNum
+                && m1.mType == m2.mType
+            :: m1 == m2
+    {
+        LemmaPrepareOutputVoteShape(r, r', outMsg);
+        LemmaPrepareOutputContainsAtMostOneVote(r, r', outMsg);
+        if isVotedInView(r.msgSent, MT_Prepare, r.viewNum) {
+            LemmaPrepareOutputContainsNoVoteAfterVoting(r, r', outMsg);
+        }
+    }
+
+    lemma LemmaPrepareOutputHasProposalProvenance(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>)
+    requires ValidReplicaState(r)
+    requires UponPrepare(r, r', outMsg)
+    ensures forall m | m in r'.msgSent && ValidPrepareVote(m) ::
+                exists proposal | proposal in r'.msgReceived ::
+                    && ValidProposal(proposal)
+                    && corrVoteMsgAndToVotedMsg(m, proposal)
+                    && ValidQC(m.lockedQC)
+                    && safeNode(m.block, proposal.justify, m.lockedQC)
+    {
+    }
 
     lemma LemmaValidationHoldsInPreparePhase(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
     requires ValidReplicaState(r)
     requires UponPrepare(r, r', outMsg)
     ensures ValidReplicaState(r')
     {
+        LemmaPrepareOutputPreservesVoteUniqueness(r, r', outMsg);
+        LemmaPrepareOutputHasProposalProvenance(r, r', outMsg);
+        assert Inv_Votes(r');
     }
 
     lemma LemmaVarStableInPreCommit(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)

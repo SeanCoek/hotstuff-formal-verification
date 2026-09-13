@@ -120,7 +120,9 @@ module M_Replica {
         if leader == r.id // Leader
         then
             var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
-            var votes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
+            var votes := if r.lockedQC.viewNum < r.viewNum
+                         then getVotesForSafeProposals(matchProposals, r.lockedQC, r.id)
+                         else {};
             var filteredVotes := proposalVoteFilter(votes);
             var filteredVotes := onlyOneVote(filteredVotes);
             var filteredVotes := getVotesIfUnVoted(filteredVotes, isVoted);
@@ -138,7 +140,9 @@ module M_Replica {
                 && r' == r.(msgSent := r.msgSent + filteredVotes)
         else
             var matchProposals := getMatchProposalMsg(r.msgReceived, r.viewNum);
-            var votes := getVotesForSafeProposals(matchProposals, r.lockedQC, r.id);
+            var votes := if r.lockedQC.viewNum < r.viewNum
+                         then getVotesForSafeProposals(matchProposals, r.lockedQC, r.id)
+                         else {};
             var filteredVotes := proposalVoteFilter(votes);
             var filteredVotes := onlyOneVote(filteredVotes);
             var filteredVotes := getVotesIfUnVoted(filteredVotes, isVoted);
@@ -394,6 +398,7 @@ module M_Replica {
         && Inv_LocalBC(r)
         && Inv_ValidationOnMsgSent(r)
         && Inv_Votes(r)
+        && Inv_LockHistory(r)
     }
 
     predicate Inv_PrepareQC(r : ReplicaState)
@@ -431,6 +436,28 @@ module M_Replica {
                                     || isInitialQC(r.lockedQC)
                                 )
         )
+    }
+
+    predicate LockedQCEvidence(msgReceived : set<Msg>, qc : Cert)
+    {
+        || isInitialQC(qc)
+        || (exists m | m in msgReceived ::
+                && ValidCommitRequest(m)
+                && m.justify == qc)
+    }
+
+    predicate PrepareVoteEvidence(r : ReplicaState, vote : Msg)
+    requires ValidPrepareVote(vote)
+    {
+        && ValidQC(vote.lockedQC)
+        && vote.lockedQC.cType.MT_PreCommit?
+        && vote.lockedQC.viewNum < vote.viewNum
+        && LockedQCEvidence(r.msgReceived, vote.lockedQC)
+        && (exists proposal | proposal in r.msgReceived ::
+                && ValidProposal(proposal)
+                && corrVoteMsgAndToVotedMsg(vote, proposal)
+                && extension(proposal.block, proposal.justify.block)
+                && safeNode(vote.block, proposal.justify, vote.lockedQC))
     }
 
     predicate Inv_LocalBC(r : ReplicaState)
@@ -471,14 +498,9 @@ module M_Replica {
                                 ::
                                    && ValidCommitRequest(m2)
                                    && corrVoteMsgAndToVotedMsg(m, m2))
-        && (forall m1, m2 | && m1 in r.msgSent
-                            && ValidPrepareVote(m1)
-                            && m2 in r.msgReceived
-                            && ValidCommitRequest(m2)
-                        ::
-                            m1.viewNum > m2.viewNum
-                            ==>
-                            extension(m1.block, m2.justify.block))
+        && (forall m | && m in r.msgSent
+                         && ValidPrepareVote(m)
+                     :: PrepareVoteEvidence(r, m))
         && (forall m1, m2 | && m1 in r.msgSent
                             && m2 in r.msgSent
                             && ValidVoteMsg(m1)
@@ -488,6 +510,26 @@ module M_Replica {
                              && m1.mType == m2.mType)
                             ==>
                             m1 == m2)
+    }
+
+    predicate Inv_LockHistory(r : ReplicaState)
+    {
+        && r.lockedQC.Cert?
+        && (forall vote |
+                && vote in r.msgSent
+                && ValidVoteMsg(vote)
+            :: vote.viewNum <= r.viewNum)
+        && (forall commitVote |
+                && commitVote in r.msgSent
+                && ValidCommitVote(commitVote)
+            :: commitVote.viewNum <= r.lockedQC.viewNum)
+        && (forall commitVote, prepareVote |
+                && commitVote in r.msgSent
+                && ValidCommitVote(commitVote)
+                && prepareVote in r.msgSent
+                && ValidPrepareVote(prepareVote)
+                && commitVote.viewNum < prepareVote.viewNum
+            :: commitVote.viewNum <= prepareVote.lockedQC.viewNum)
     }
 
     function getMsgReceiveReplica(r : ReplicaState) : (m : set<Msg>)

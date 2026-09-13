@@ -101,4 +101,19 @@ module M_Set {
                     :: p(e))
     {}
 
+    lemma LemmaSetAtMostOneElementHasUniqueElements<T>(s : set<T>)
+    requires |s| == 0 || |s| == 1
+    ensures forall x, y | x in s && y in s :: x == y
+    {
+        forall x, y | x in s && y in s
+            ensures x == y
+        {
+            if x != y {
+                assert {x, y} <= s;
+                LemmaSubsetCardinality({x, y}, s);
+                assert |{x, y}| == 2;
+                assert false;
+            }
+        }
+    }
 }

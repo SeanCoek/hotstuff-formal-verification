@@ -24,6 +24,24 @@ module M_Lemma {
     import opened M_Lemmas_Replica
     import opened M_Lemmas_System
 
+    lemma LemmaExtensionTransitive(child : Block, middle : Block, parent : Block)
+    requires child.Block? && middle.Block? && parent.Block?
+    requires extension(child, middle)
+    requires extension(middle, parent)
+    ensures extension(child, parent)
+    {
+    }
+
+    predicate BadPrepareHolder(ss : SystemState, commitQC : Cert, m : Msg)
+    requires ValidQC(commitQC)
+    {
+        && m in ss.msgSent
+        && ValidQC(m.justify)
+        && m.justify.cType.MT_Prepare?
+        && commitQC.viewNum <= m.justify.viewNum
+        && !extension(m.justify.block, commitQC.block)
+    }
+
     /* If an honest replica send out a vote message,
        then this message should be found in its output buffer (msgSent).
        The reason we can conclude this is that we assume signatures cannot
@@ -209,9 +227,154 @@ module M_Lemma {
 
 
     /**
-        If hoenst node (@param : r) has voted in a commit qc (@param : qc1_commit),
-        it wont vote for any conflicting prepare qc (@param : qc2_prepare) in later views.
+        Every Prepare QC at or after a Commit QC extends the committed block.
+        The strict-view case is proved by choosing the earliest conflicting
+        Prepare QC and unfolding the two branches of safeNode.
      */
+    lemma LemmaPrepareQCAfterCommitExtends(
+        ss : SystemState,
+        qc_commit : Cert,
+        qc_prepare : Cert)
+    requires Reachable(ss)
+    requires ValidQC(qc_commit) && qc_commit.cType.MT_Commit?
+    requires ValidQC(qc_prepare) && qc_prepare.cType.MT_Prepare?
+    requires qc_prepare.viewNum >= qc_commit.viewNum
+    ensures extension(qc_prepare.block, qc_commit.block)
+    {
+        LemmaReachableStateIsValid(ss);
+        LemmaExistVoteMsgForSignature(ss);
+        LemmaExistValidMsgHoldingValidQC(ss, qc_commit);
+        LemmaExistValidMsgHoldingValidQC(ss, qc_prepare);
+        LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
+
+        if qc_prepare.viewNum == qc_commit.viewNum {
+            var commitHolder :| && commitHolder in ss.msgSent
+                                && ValidMsg(commitHolder)
+                                && commitHolder.justify == qc_commit;
+            var commitPrepareHolder :| && commitPrepareHolder in ss.msgSent
+                                       && ValidQC(commitPrepareHolder.justify)
+                                       && commitPrepareHolder.justify.cType.MT_Prepare?
+                                       && correspondingQC(qc_commit, commitPrepareHolder.justify);
+            LemmaSameValidQCInSameView(ss);
+            assert commitPrepareHolder.justify.block == qc_commit.block;
+            assert qc_prepare.block == commitPrepareHolder.justify.block;
+        } else if !extension(qc_prepare.block, qc_commit.block) {
+            var prepareHolder :| && prepareHolder in ss.msgSent
+                                 && ValidMsg(prepareHolder)
+                                 && prepareHolder.justify == qc_prepare;
+
+            var badMessages := set m | m in ss.msgSent
+                                         && BadPrepareHolder(ss, qc_commit, m) :: m;
+            assert prepareHolder in badMessages;
+            assert badMessages != {};
+            assert forall m | m in badMessages :: m.justify.Cert?;
+            var firstBad := argminView(badMessages);
+            var badQC := firstBad.justify;
+            assert BadPrepareHolder(ss, qc_commit, firstBad);
+            assert ValidQC(badQC) && badQC.cType.MT_Prepare?;
+            assert qc_commit.viewNum <= badQC.viewNum;
+            assert badQC.viewNum <= qc_prepare.viewNum;
+
+            if badQC.viewNum == qc_commit.viewNum {
+                var commitHolder :| && commitHolder in ss.msgSent
+                                    && ValidMsg(commitHolder)
+                                    && commitHolder.justify == qc_commit;
+                var commitPrepareHolder :| && commitPrepareHolder in ss.msgSent
+                                           && ValidQC(commitPrepareHolder.justify)
+                                           && commitPrepareHolder.justify.cType.MT_Prepare?
+                                           && correspondingQC(qc_commit, commitPrepareHolder.justify);
+                LemmaSameValidQCInSameView(ss);
+                assert badQC.block == commitPrepareHolder.justify.block;
+                assert commitPrepareHolder.justify.block == qc_commit.block;
+                assert extension(badQC.block, qc_commit.block);
+                assert false;
+            } else {
+                LemmaExistSameHonestNodeInTwoValidQC(ss, qc_commit, badQC);
+                var commonReplica :| && IsHonest(ss, commonReplica)
+                                      && commonReplica in getMajoritySignerInValidQC(qc_commit)
+                                      && commonReplica in getMajoritySignerInValidQC(badQC);
+                var rState := ss.nodeStates[commonReplica];
+                assert ValidReplicaState(rState);
+
+                LemmaExistSignIfSignerInQCSigners(qc_commit);
+                LemmaExistSignIfSignerInQCSigners(badQC);
+                var commitSig :| && commitSig in qc_commit.signatures
+                                  && commitSig.signer == commonReplica;
+                var prepareSig :| && prepareSig in badQC.signatures
+                                   && prepareSig.signer == commonReplica;
+                var commitVote :| && commitVote in rState.msgSent
+                                   && ValidVoteMsg(commitVote)
+                                   && corrVoteMsg(commitSig, commitVote);
+                var prepareVote :| && prepareVote in rState.msgSent
+                                    && ValidVoteMsg(prepareVote)
+                                    && corrVoteMsg(prepareSig, prepareVote);
+
+                assert ValidCommitVote(commitVote);
+                assert ValidPrepareVote(prepareVote);
+                assert commitVote.viewNum == qc_commit.viewNum;
+                assert commitVote.block == qc_commit.block;
+                assert prepareVote.viewNum == badQC.viewNum;
+                assert prepareVote.block == badQC.block;
+                assert commitVote.viewNum < prepareVote.viewNum;
+                assert PrepareVoteEvidence(rState, prepareVote);
+                assert commitVote.viewNum <= prepareVote.lockedQC.viewNum;
+                assert prepareVote.lockedQC.viewNum < prepareVote.viewNum;
+
+                var proposal :| && proposal in rState.msgReceived
+                                && ValidProposal(proposal)
+                                && corrVoteMsgAndToVotedMsg(prepareVote, proposal)
+                                && extension(proposal.block, proposal.justify.block)
+                                && safeNode(prepareVote.block, proposal.justify, prepareVote.lockedQC);
+                assert proposal.block == prepareVote.block;
+                assert proposal.viewNum == prepareVote.viewNum;
+                assert proposal in ss.msgSent;
+
+                LemmaExistValidMsgHoldingValidQC(ss, prepareVote.lockedQC);
+                var lockHolder :| && lockHolder in ss.msgSent
+                                  && ValidMsg(lockHolder)
+                                  && lockHolder.justify == prepareVote.lockedQC;
+                LemmaExistValidPrepareQCForEveryValidPrecommitQC(ss);
+                var lockPrepareHolder :| && lockPrepareHolder in ss.msgSent
+                                         && ValidQC(lockPrepareHolder.justify)
+                                         && lockPrepareHolder.justify.cType.MT_Prepare?
+                                         && correspondingQC(prepareVote.lockedQC, lockPrepareHolder.justify);
+                var lockPrepareQC := lockPrepareHolder.justify;
+                assert qc_commit.viewNum <= lockPrepareQC.viewNum;
+                assert lockPrepareQC.viewNum < badQC.viewNum;
+                assert extension(lockPrepareQC.block, qc_commit.block) by {
+                    if !extension(lockPrepareQC.block, qc_commit.block) {
+                        assert BadPrepareHolder(ss, qc_commit, lockPrepareHolder);
+                        assert lockPrepareHolder in badMessages;
+                        assert firstBad.justify.viewNum <= lockPrepareHolder.justify.viewNum;
+                        assert false;
+                    }
+                }
+
+                if extension(prepareVote.block, prepareVote.lockedQC.block) {
+                    assert lockPrepareQC.block == prepareVote.lockedQC.block;
+                    LemmaExtensionTransitive(prepareVote.block, lockPrepareQC.block, qc_commit.block);
+                    assert extension(badQC.block, qc_commit.block);
+                    assert false;
+                } else {
+                    assert proposal.justify.viewNum > prepareVote.lockedQC.viewNum;
+                    assert qc_commit.viewNum <= proposal.justify.viewNum;
+                    assert proposal.justify.viewNum < badQC.viewNum;
+                    assert extension(proposal.justify.block, qc_commit.block) by {
+                        if !extension(proposal.justify.block, qc_commit.block) {
+                            assert BadPrepareHolder(ss, qc_commit, proposal);
+                            assert proposal in badMessages;
+                            assert firstBad.justify.viewNum <= proposal.justify.viewNum;
+                            assert false;
+                        }
+                    }
+                    LemmaExtensionTransitive(proposal.block, proposal.justify.block, qc_commit.block);
+                    assert extension(badQC.block, qc_commit.block);
+                    assert false;
+                }
+            }
+        }
+    }
+
     lemma LemmaHonestNodeWontVoteConflictInPrepare(
         ss : SystemState,
         r : Address,
@@ -225,74 +388,7 @@ module M_Lemma {
     requires qc2_prepare.viewNum >= qc1_commit.viewNum
     ensures extension(qc2_prepare.block, qc1_commit.block)
     {
-        var rState := ss.nodeStates[r];
-        LemmaReachableStateIsValid(ss);
-        LemmaExistVoteMsgForSignature(ss);
-        if qc2_prepare.viewNum == qc1_commit.viewNum {
-            LemmaExistValidMsgHoldingValidQC(ss, qc1_commit);
-            var m : Msg :| && m in ss.msgSent
-                           && m.justify == qc1_commit;
-            LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
-            LemmaSameValidQCInSameView(ss);
-            assert qc2_prepare.block == qc1_commit.block;
-        }
-        else {
-            var vote2_pre :| && vote2_pre in rState.msgSent
-                            && ValidPrepareVote(vote2_pre)
-                            && vote2_pre.block == qc2_prepare.block
-                            && vote2_pre.viewNum == qc2_prepare.viewNum;
-
-            LemmaExistSignIfSignerInQCSigners(qc1_commit);
-            assert exists sig | sig in qc1_commit.signatures :: sig.signer == r;
-            var sign1_cmt :| && sign1_cmt in qc1_commit.signatures
-                             && sign1_cmt.signer == r;
-            var vote1_cmt :| && vote1_cmt in rState.msgSent
-                            && ValidVoteMsg(vote1_cmt)
-                            && corrVoteMsg(sign1_cmt, vote1_cmt);
-            assert vote1_cmt.viewNum == qc1_commit.viewNum;
-            assert vote1_cmt.block == qc1_commit.block;
-            assert ValidCommitVote(vote1_cmt);
-
-            assert ValidReplicaState(rState);
-            assert vote1_cmt in rState.msgSent && ValidCommitVote(vote1_cmt);
-            assert exists m2 :: && m2 in rState.msgReceived
-                                && ValidCommitRequest(m2)
-                                && corrVoteMsgAndToVotedMsg(vote1_cmt, m2);
-            var m2 :| && m2 in rState.msgReceived
-                      && ValidCommitRequest(m2)
-                      && corrVoteMsgAndToVotedMsg(vote1_cmt, m2);
-
-            assert m2.viewNum == vote1_cmt.viewNum by {
-                assert && corrVoteMsgAndToVotedMsg(vote1_cmt, m2)
-                       && vote1_cmt.viewNum == vote1_cmt.partialSig.viewNum;
-
-            }
-            assert m2.justify.block == vote1_cmt.block by {
-                assert corrVoteMsgAndToVotedMsg(vote1_cmt, m2);
-                assert m2.justify.block == vote1_cmt.partialSig.block;
-                assert vote1_cmt.partialSig.block == vote1_cmt.block;
-            }
-
-            assert qc2_prepare.viewNum > qc1_commit.viewNum;
-            assert qc2_prepare.viewNum == vote2_pre.viewNum;
-            assert qc1_commit.viewNum == vote1_cmt.viewNum;
-            assert vote2_pre.viewNum > m2.viewNum;
-
-            assert extension(qc2_prepare.block, vote1_cmt.block) by {
-                assert ( && vote2_pre in rState.msgSent
-                         && ValidPrepareVote(vote2_pre)
-                         && m2 in rState.msgReceived
-                         && ValidCommitRequest(m2)
-                         );
-                assert ValidReplicaState(rState);
-                assert vote2_pre.viewNum > m2.viewNum;
-                assert extension(vote2_pre.block, m2.justify.block);
-                assert vote2_pre.block == qc2_prepare.block;
-                assert m2.justify.block == vote1_cmt.block;
-            }
-            // assert false;
-        }
-
+        LemmaPrepareQCAfterCommitExtends(ss, qc1_commit, qc2_prepare);
     }
 
     lemma LemmaExistSignIfSignerInQCSigners(qc : Cert)
