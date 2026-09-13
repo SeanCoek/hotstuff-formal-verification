@@ -53,7 +53,7 @@ module M_SpecTypes {
 
   const All_Nodes : set<Address> := Honest_Nodes + Adversary_Nodes
 
-  const Genesis_Block : Block
+  const Genesis_Block : Block := Block(EmptyBlock)
 
   datatype Configuration = Configuration(
     honestNodes : set<Address>,

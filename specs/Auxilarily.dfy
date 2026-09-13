@@ -413,16 +413,26 @@ module M_AuxilarilyFunc {
     ensures forall m | m in msgs :: ValidQC(m.justify) ==> r.viewNum >= m.justify.viewNum
     ensures exists m | m in msgs :: ValidQC(m.justify) && m.justify == r
 
-    function{:axiom} getNewBlock(parent : Block) : (r : Block)
+    function getNewBlock(parent : Block) : (r : Block)
     ensures r.Block?
     ensures r.parent == parent
     ensures r.parent != r
+    {
+        Block(parent)
+    }
 
-    function{:axiom} getAncestors(b : Block) : (r : seq<Block>)
-    ensures |r| > 0 && r[|r|-1] == b
+    function getAncestors(b : Block) : (r : seq<Block>)
+    ensures b.EmptyBlock? ==> r == []
+    ensures b.Block? ==> |r| > 0 && r[|r|-1] == b
     ensures forall i | 0 <= i < |r| :: r[i].Block?
-    ensures forall i, j | 0 <= i < j < |r| :: r[i] != r[j]  // None duplication
     ensures forall i | 0 <= i < |r|-1 :: r[i] == r[i+1].parent
+    ensures b.Block? ==> r == getAncestors(b.parent) + [b]
+    decreases b
+    {
+        match b
+        case EmptyBlock => []
+        case Block(parent) => getAncestors(parent) + [b]
+    }
 
     predicate extension(child : Block, parent : Block)
     requires child.Block?
@@ -448,6 +458,13 @@ module M_AuxilarilyFunc {
         //         }
         //     }
         // }
+    }
+
+    lemma Lemma_DirectChildExtendsParent(child : Block, parent : Block)
+    requires child.Block? && parent.Block?
+    requires child.parent == parent
+    ensures extension(child, parent)
+    {
     }
 
     predicate safeNode(block : Block, qc : Cert, lockedQC : Cert)
@@ -539,15 +556,24 @@ module M_AuxilarilyFunc {
                     :: vote.signer
     }
 
-    function{:axiom} splitMsgByBlocks(msgs : set<Msg>) : (r : set<set<Msg>>)
-    ensures |msgs| > 0 ==> |r| > 0
+    function messagesForBlock(msgs : set<Msg>, block : Block) : set<Msg>
+    {
+        set m | && m in msgs
+                && m.block == block
+    }
+
+    opaque function splitMsgByBlocks(msgs : set<Msg>) : (r : set<set<Msg>>)
     ensures forall mset | mset in r :: mset <= msgs
     ensures forall mset1, mset2 | mset1 in r && mset2 in r :: (mset1 != mset2) ==> |mset1 * mset2| == 0
     ensures (forall mset | mset in r :: (forall m1, m2 | m1 in mset && m2 in mset :: m1.block == m2.block))
+    {
+        set m | m in msgs :: messagesForBlock(msgs, m.block)
+    }
 
 
     function{:axiom} getMaxLengthSet<T>(sets : set<set<T>>) : (r : set<T>)
-    ensures r in sets
+    ensures sets == {} ==> r == {}
+    ensures sets != {} ==> r in sets
     ensures forall s | s in sets :: |r| >= |s|
 
 
@@ -990,7 +1016,17 @@ module M_AuxilarilyFunc {
     }
 
 
-    function{:axiom} filterDoubleVote(msgs : set<Msg>) : (r : set<Msg>)
+    predicate hasDoubleVote(msgs : set<Msg>, m : Msg)
+    {
+        exists m' ::
+            && m' in msgs
+            && m' != m
+            && m.partialSig.Signature?
+            && m'.partialSig.Signature?
+            && m'.partialSig.signer == m.partialSig.signer
+    }
+
+    opaque function filterDoubleVote(msgs : set<Msg>) : (r : set<Msg>)
     requires forall m | m in msgs :: ValidVoteMsg(m)
     requires forall m1, m2 | && m1 in msgs 
                              && m2 in msgs
@@ -1009,5 +1045,9 @@ module M_AuxilarilyFunc {
                             ==>
                             && m1 !in r
                             && m2 !in r
+    {
+        set m | && m in msgs
+                && !hasDoubleVote(msgs, m)
+    }
 
 }

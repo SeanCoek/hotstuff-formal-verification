@@ -312,18 +312,19 @@ module M_Replica {
                     var commitQC := Cert(MT_Commit, m.viewNum, m.block, sgns);
                     var decideMsg := Msg(r.id, MT_Decide, r.viewNum, EmptyBlock, commitQC, SigNone, CertNone);
 
-                    && outMsg == {decideMsg}
-                    && r' == r.(msgSent := r.msgSent + {decideMsg})
                     && var ancestors := getAncestors(m_qc.block);
                     && (
                         || (
                             && r.bc < ancestors
-                            && r' == r.(bc := r.bc + ancestors[|r.bc|..])
+                            && r' == r.(
+                                bc := r.bc + ancestors[|r.bc|..],
+                                msgSent := r.msgSent + {decideMsg})
                             )
                         || (
-                            && r' == r
+                            && r' == r.(msgSent := r.msgSent + {decideMsg})
                             )
                     )
+                    && outMsg == {decideMsg}
                 else
                     && var ancestors := getAncestors(m_qc.block);
                     && (
