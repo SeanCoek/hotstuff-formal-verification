@@ -28,6 +28,16 @@ module M_Adversary {
         && a.byz_nodes == M_SpecTypes.Adversary_Nodes
         && a.byz_nodes <= M_SpecTypes.All_Nodes  // byzantine nodes should exists in the set of all nodes.
         && |a.byz_nodes| <= f(|M_SpecTypes.All_Nodes|)    // the counts of byzantine nodes should not exceed 1/3 of all nodes.
+        && a.msgReceived == {}
+    }
+
+    predicate AdversaryCanCreateMsg(
+        msgReceived : set<Msg>,
+        byzNodes : set<Address>,
+        m : Msg)
+    {
+        && m.sender in byzNodes
+        && MessageQCsHaveVoteEvidence(msgReceived, byzNodes, m)
     }
 
     /**
@@ -50,7 +60,7 @@ module M_Adversary {
         )
         && (forall m | m in outMsg ::
                     || m in msgReceived // relay received messages to other nodes.
-                    || m.sender in a.byz_nodes // send new messages with signatures of Byzantine nodes
+                    || AdversaryCanCreateMsg(msgReceived, a.byz_nodes, m)
             )
     }
 }

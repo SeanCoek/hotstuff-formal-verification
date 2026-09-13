@@ -42,28 +42,77 @@ module M_Lemma {
         && !extension(m.justify.block, commitQC.block)
     }
 
+    predicate QCHeldInSystem(ss : SystemState, qc : Cert)
+    {
+        exists holder | holder in ss.msgSent ::
+            holder.justify == qc
+    }
+
     /* If an honest replica send out a vote message,
        then this message should be found in its output buffer (msgSent).
        The reason we can conclude this is that we assume signatures cannot
        be forged by byzantine nodes.
        */
-    lemma{:axiom} LemmaExistVoteMsgForSignature(ss : SystemState)
-    requires Reachable(ss)
-    ensures forall sig : Signature |  && sig.Signature?
-                                      && sig.signer in ss.nodeStates.Keys
-                                      && IsHonest(ss, sig.signer)
-                                   :: exists m | m in ss.nodeStates[sig.signer].msgSent
-                                              :: 
-                                                && ValidVoteMsg(m)
-                                                && corrVoteMsg(sig, m)
-
-    lemma{:axiom} LemmaExistValidMsgHoldingValidQC(ss : SystemState, qc : Cert)
+    lemma LemmaExistVoteMsgForSignature(
+        ss : SystemState,
+        holder : Msg,
+        qc : Cert,
+        sig : Signature)
     requires Reachable(ss)
     requires ValidQC(qc)
-    ensures (exists m | m in ss.msgSent
-                    ::
-                        && ValidMsg(m)
-                        && m.justify == qc)
+    requires !TrustedInitialQC(qc)
+    requires holder in ss.msgSent
+    requires QCOccursInMessage(holder, qc)
+    requires sig in qc.signatures
+    requires IsHonest(ss, sig.signer)
+    ensures exists vote | vote in ss.nodeStates[sig.signer].msgSent ::
+        && ValidVoteMsg(vote)
+        && vote.partialSig == sig
+        && corrVoteMsg(sig, vote)
+    {
+        LemmaReachableStateIsValid(ss);
+        assert MessageQCsHaveVoteEvidence(
+            ss.msgSent,
+            ss.adversary.byz_nodes,
+            holder);
+        assert CertificateHasVoteEvidence(
+            ss.msgSent,
+            ss.adversary.byz_nodes,
+            qc);
+        assert sig.signer !in ss.adversary.byz_nodes;
+        assert SignatureHasVoteEvidence(ss.msgSent, sig);
+        var vote :| && vote in ss.msgSent
+                    && ValidVoteMsg(vote)
+                    && vote.partialSig == sig;
+        assert vote.sender == sig.signer;
+        assert IsHonest(ss, vote.sender);
+        assert vote in ss.nodeStates[vote.sender].msgSent;
+    }
+
+    lemma LemmaHeldCommitQCViewPositive(
+        ss : SystemState,
+        holder : Msg,
+        qc : Cert)
+    requires Reachable(ss)
+    requires holder in ss.msgSent
+    requires holder.justify == qc
+    requires ValidQC(qc) && qc.cType.MT_Commit?
+    ensures qc.viewNum > 0
+    {
+        assert !TrustedInitialQC(qc);
+        LemmaExistHonestSignerInValidQC(ss, qc);
+        var sig :| && sig in qc.signatures
+                    && IsHonest(ss, sig.signer);
+        LemmaExistVoteMsgForSignature(ss, holder, qc, sig);
+        var vote :| && vote in ss.nodeStates[sig.signer].msgSent
+                    && ValidVoteMsg(vote)
+                    && vote.partialSig == sig
+                    && corrVoteMsg(sig, vote);
+        LemmaReachableStateIsValid(ss);
+        assert ValidReplicaState(ss.nodeStates[sig.signer]);
+        assert vote.viewNum > 0;
+        assert vote.viewNum == qc.viewNum;
+    }
     
     lemma LemmaHonestNodeOnlyVoteOnceInOneView(
                                                 ss : SystemState,
@@ -88,6 +137,7 @@ module M_Lemma {
     requires Reachable(ss)
     ensures forall m : Msg | && m in ss.msgSent
                              && ValidQC(m.justify)
+                             && !TrustedInitialQC(m.justify)
                           ::
                              && (forall s : Signature | && s in m.justify.signatures
                                                         && s.Signature?
@@ -101,6 +151,7 @@ module M_Lemma {
     {
         forall m | && m in ss.msgSent
                    && ValidQC(m.justify)
+                   && !TrustedInitialQC(m.justify)
         ensures (forall s : Signature | && s in m.justify.signatures
                                         && s.Signature?
                                         && IsHonest(ss, s.signer)
@@ -120,7 +171,7 @@ module M_Lemma {
                     )
             {
                 LemmaReachableStateIsValid(ss);
-                LemmaExistVoteMsgForSignature(ss);
+                LemmaExistVoteMsgForSignature(ss, m, m.justify, s);
             }
         }
     }
@@ -142,6 +193,7 @@ module M_Lemma {
     ensures forall m : Msg | && m in ss.msgSent
                              && ValidQC(m.justify)
                              && m.justify.cType == MT_PreCommit
+                             && !TrustedInitialQC(m.justify)
                           ::
                              && (exists m2 : Msg :: && m2 in ss.msgSent
                                                  && ValidQC(m2.justify)
@@ -152,6 +204,7 @@ module M_Lemma {
         forall m : Msg | && m in ss.msgSent
                                 && ValidQC(m.justify)
                                 && m.justify.cType == MT_PreCommit
+                                && !TrustedInitialQC(m.justify)
         ensures (exists m2 : Msg :: && m2 in ss.msgSent
                                     && ValidQC(m2.justify)
                                     && m2.justify.cType == MT_Prepare
@@ -164,7 +217,7 @@ module M_Lemma {
             LemmaReachableStateIsValid(ss);
             var sign_honest :| && sign_honest in sgns
                               && IsHonest(ss, sign_honest.signer);
-            LemmaExistVoteMsgForSignature(ss);
+            LemmaExistVoteMsgForSignature(ss, m, m.justify, sign_honest);
             var corrVote :| && corrVote in ss.nodeStates[sign_honest.signer].msgSent
                             && ValidVoteMsg(corrVote)
                             && corrVoteMsg(sign_honest, corrVote);
@@ -200,7 +253,7 @@ module M_Lemma {
             LemmaReachableStateIsValid(ss);
             var sign_honest :| && sign_honest in sgns
                               && IsHonest(ss, sign_honest.signer);
-            LemmaExistVoteMsgForSignature(ss);
+            LemmaExistVoteMsgForSignature(ss, m, m.justify, sign_honest);
             var corrVote :| && corrVote in ss.nodeStates[sign_honest.signer].msgSent
                             && ValidVoteMsg(corrVote)
                             && corrVoteMsg(sign_honest, corrVote);
@@ -223,6 +276,22 @@ module M_Lemma {
     {
         LemmaExistValidPrecommitQCForEveryValidCommitQC(ss);
         LemmaExistValidPrepareQCForEveryValidPrecommitQC(ss);
+        forall m : Msg | && m in ss.msgSent
+                             && ValidQC(m.justify)
+                             && m.justify.cType == MT_Commit
+        ensures exists m2 : Msg :: && m2 in ss.msgSent
+                                  && ValidQC(m2.justify)
+                                  && m2.justify.cType == MT_Prepare
+                                  && correspondingQC(m.justify, m2.justify)
+        {
+            LemmaHeldCommitQCViewPositive(ss, m, m.justify);
+            var precommitHolder :| && precommitHolder in ss.msgSent
+                                   && ValidQC(precommitHolder.justify)
+                                   && precommitHolder.justify.cType == MT_PreCommit
+                                   && correspondingQC(m.justify, precommitHolder.justify);
+            assert precommitHolder.justify.viewNum > 0;
+            assert !TrustedInitialQC(precommitHolder.justify);
+        }
     }
 
 
@@ -231,38 +300,40 @@ module M_Lemma {
         The strict-view case is proved by choosing the earliest conflicting
         Prepare QC and unfolding the two branches of safeNode.
      */
-    lemma LemmaPrepareQCAfterCommitExtends(
+    lemma {:isolate_assertions} LemmaPrepareQCAfterCommitExtends(
         ss : SystemState,
         qc_commit : Cert,
         qc_prepare : Cert)
     requires Reachable(ss)
     requires ValidQC(qc_commit) && qc_commit.cType.MT_Commit?
     requires ValidQC(qc_prepare) && qc_prepare.cType.MT_Prepare?
+    requires QCHeldInSystem(ss, qc_commit)
+    requires QCHeldInSystem(ss, qc_prepare)
     requires qc_prepare.viewNum >= qc_commit.viewNum
     ensures extension(qc_prepare.block, qc_commit.block)
     {
         LemmaReachableStateIsValid(ss);
-        LemmaExistVoteMsgForSignature(ss);
-        LemmaExistValidMsgHoldingValidQC(ss, qc_commit);
-        LemmaExistValidMsgHoldingValidQC(ss, qc_prepare);
+        var commitHolder :| && commitHolder in ss.msgSent
+                            && commitHolder.justify == qc_commit;
+        var prepareHolder :| && prepareHolder in ss.msgSent
+                             && prepareHolder.justify == qc_prepare;
+        LemmaHeldCommitQCViewPositive(ss, commitHolder, qc_commit);
         LemmaExistValidPrepareQCForEveryValidCommitQC(ss);
 
         if qc_prepare.viewNum == qc_commit.viewNum {
-            var commitHolder :| && commitHolder in ss.msgSent
-                                && ValidMsg(commitHolder)
-                                && commitHolder.justify == qc_commit;
             var commitPrepareHolder :| && commitPrepareHolder in ss.msgSent
                                        && ValidQC(commitPrepareHolder.justify)
                                        && commitPrepareHolder.justify.cType.MT_Prepare?
                                        && correspondingQC(qc_commit, commitPrepareHolder.justify);
-            LemmaSameValidQCInSameView(ss);
+            LemmaSameValidQCInSameView(
+                ss,
+                prepareHolder,
+                commitPrepareHolder,
+                qc_prepare,
+                commitPrepareHolder.justify);
             assert commitPrepareHolder.justify.block == qc_commit.block;
             assert qc_prepare.block == commitPrepareHolder.justify.block;
         } else if !extension(qc_prepare.block, qc_commit.block) {
-            var prepareHolder :| && prepareHolder in ss.msgSent
-                                 && ValidMsg(prepareHolder)
-                                 && prepareHolder.justify == qc_prepare;
-
             var badMessages := set m | m in ss.msgSent
                                          && BadPrepareHolder(ss, qc_commit, m) :: m;
             assert prepareHolder in badMessages;
@@ -276,14 +347,17 @@ module M_Lemma {
             assert badQC.viewNum <= qc_prepare.viewNum;
 
             if badQC.viewNum == qc_commit.viewNum {
-                var commitHolder :| && commitHolder in ss.msgSent
-                                    && ValidMsg(commitHolder)
-                                    && commitHolder.justify == qc_commit;
                 var commitPrepareHolder :| && commitPrepareHolder in ss.msgSent
                                            && ValidQC(commitPrepareHolder.justify)
                                            && commitPrepareHolder.justify.cType.MT_Prepare?
                                            && correspondingQC(qc_commit, commitPrepareHolder.justify);
-                LemmaSameValidQCInSameView(ss);
+                assert firstBad.justify == badQC;
+                LemmaSameValidQCInSameView(
+                    ss,
+                    firstBad,
+                    commitPrepareHolder,
+                    badQC,
+                    commitPrepareHolder.justify);
                 assert badQC.block == commitPrepareHolder.justify.block;
                 assert commitPrepareHolder.justify.block == qc_commit.block;
                 assert extension(badQC.block, qc_commit.block);
@@ -302,6 +376,12 @@ module M_Lemma {
                                   && commitSig.signer == commonReplica;
                 var prepareSig :| && prepareSig in badQC.signatures
                                    && prepareSig.signer == commonReplica;
+                assert !TrustedInitialQC(qc_commit);
+                assert !TrustedInitialQC(badQC);
+                LemmaExistVoteMsgForSignature(
+                    ss, commitHolder, qc_commit, commitSig);
+                LemmaExistVoteMsgForSignature(
+                    ss, firstBad, badQC, prepareSig);
                 var commitVote :| && commitVote in rState.msgSent
                                    && ValidVoteMsg(commitVote)
                                    && corrVoteMsg(commitSig, commitVote);
@@ -329,10 +409,14 @@ module M_Lemma {
                 assert proposal.viewNum == prepareVote.viewNum;
                 assert proposal in ss.msgSent;
 
-                LemmaExistValidMsgHoldingValidQC(ss, prepareVote.lockedQC);
-                var lockHolder :| && lockHolder in ss.msgSent
-                                  && ValidMsg(lockHolder)
+                assert commitVote.viewNum > 0;
+                assert prepareVote.lockedQC.viewNum > 0;
+                assert !TrustedInitialQC(prepareVote.lockedQC);
+                assert LockedQCEvidence(rState.msgReceived, prepareVote.lockedQC);
+                var lockHolder :| && lockHolder in rState.msgReceived
+                                  && ValidCommitRequest(lockHolder)
                                   && lockHolder.justify == prepareVote.lockedQC;
+                assert lockHolder in ss.msgSent;
                 LemmaExistValidPrepareQCForEveryValidPrecommitQC(ss);
                 var lockPrepareHolder :| && lockPrepareHolder in ss.msgSent
                                          && ValidQC(lockPrepareHolder.justify)
@@ -384,6 +468,8 @@ module M_Lemma {
     requires IsHonest(ss, r)
     requires ValidQC(qc1_commit) && qc1_commit.cType.MT_Commit?
     requires ValidQC(qc2_prepare) && qc2_prepare.cType.MT_Prepare?
+    requires QCHeldInSystem(ss, qc1_commit)
+    requires QCHeldInSystem(ss, qc2_prepare)
     requires predNodeInTwoQC(qc1_commit, qc2_prepare, r)
     requires qc2_prepare.viewNum >= qc1_commit.viewNum
     ensures extension(qc2_prepare.block, qc1_commit.block)
@@ -562,44 +648,47 @@ module M_Lemma {
         LemmaTwoQuorumIntersection(All_Nodes, Adversary_Nodes, signers1, signers2);
     }
 
-    lemma LemmaSameValidQCInSameView(ss : SystemState)
+    lemma LemmaSameValidQCInSameView(
+        ss : SystemState,
+        holder1 : Msg,
+        holder2 : Msg,
+        cert1 : Cert,
+        cert2 : Cert)
     requires Reachable(ss)
-    ensures forall cert1, cert2 | && ValidQC(cert1)
-                                    && ValidQC(cert2)
-                                    && cert1.cType == cert2.cType
-                                    && cert1.viewNum == cert2.viewNum
-                                ::
-                                    cert1.block == cert2.block
+    requires holder1 in ss.msgSent && QCOccursInMessage(holder1, cert1)
+    requires holder2 in ss.msgSent && QCOccursInMessage(holder2, cert2)
+    requires ValidQC(cert1) && ValidQC(cert2)
+    requires !TrustedInitialQC(cert1) && !TrustedInitialQC(cert2)
+    requires cert1.cType == cert2.cType
+    requires cert1.viewNum == cert2.viewNum
+    ensures cert1.block == cert2.block
     {
+        LemmaReachableStateIsValid(ss);
+        LemmaExistSameHonestNodeInTwoValidQC(ss, cert1, cert2);
+        var signers1 := getMajoritySignerInValidQC(cert1);
+        var signers2 := getMajoritySignerInValidQC(cert2);
+        var replica :| IsHonest(ss, replica) && replica in signers1 * signers2;
+        var rState := ss.nodeStates[replica];
 
-        forall cert1, cert2 | && ValidQC(cert1)
-                                    && ValidQC(cert2)
-                                    && cert1.cType == cert2.cType
-                                    && cert1.viewNum == cert2.viewNum
-        ensures cert1.block == cert2.block
-        {
-            LemmaReachableStateIsValid(ss);
-            LemmaExistSameHonestNodeInTwoValidQC(ss, cert1, cert2);
-            var signers1 := getMajoritySignerInValidQC(cert1);
-            var signers2 := getMajoritySignerInValidQC(cert2);
-            var replica :| IsHonest(ss, replica) && replica in signers1 * signers2;
-            var rState := ss.nodeStates[replica];
+        LemmaExistSignIfSignerInQCSigners(cert1);
+        LemmaExistSignIfSignerInQCSigners(cert2);
+        var sign1 :| && sign1 in cert1.signatures
+                     && sign1.signer == replica;
+        var sign2 :| && sign2 in cert2.signatures
+                     && sign2.signer == replica;
+        LemmaExistVoteMsgForSignature(ss, holder1, cert1, sign1);
+        LemmaExistVoteMsgForSignature(ss, holder2, cert2, sign2);
+        var v1 :| && v1 in rState.msgSent
+                  && ValidVoteMsg(v1)
+                  && v1.partialSig == sign1
+                  && corrVoteMsg(sign1, v1);
+        var v2 :| && v2 in rState.msgSent
+                  && ValidVoteMsg(v2)
+                  && v2.partialSig == sign2
+                  && corrVoteMsg(sign2, v2);
 
-            LemmaExistVoteMsgForSignature(ss);
-            var sign1 :| && sign1 in cert1.signatures
-                         && sign1.signer == replica;
-            var sign2 :| && sign2 in cert2.signatures
-                         && sign2.signer == replica;
-            var v1 :| && v1 in rState.msgSent
-                      && ValidVoteMsg(v1)
-                      && corrVoteMsg(sign1, v1);
-            var v2 :| && v2 in rState.msgSent
-                      && ValidVoteMsg(v2)
-                      && corrVoteMsg(sign2, v2);
-
-            LemmaHonestNodeOnlyVoteOnceInOneView(ss, replica);
-            assert v1.block == v2.block;
-        }
+        LemmaHonestNodeOnlyVoteOnceInOneView(ss, replica);
+        assert v1.block == v2.block;
     }
 
 }

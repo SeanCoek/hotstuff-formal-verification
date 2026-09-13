@@ -410,6 +410,149 @@ module M_Lemmas_Replica {
     {
     }
 
+    lemma LemmaPrepareOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires UponPrepare(r, r', outMsg)
+    requires r.msgReceived <= allMsgs
+    requires forall m | m in r.msgReceived ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+    }
+
+    lemma LemmaPreCommitOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires UponPreCommit(r, r', outMsg)
+    requires r.msgReceived <= allMsgs
+    requires forall m | m in r.msgReceived ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+    }
+
+    lemma LemmaCommitOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires UponCommit(r, r', outMsg)
+    requires r.msgReceived <= allMsgs
+    requires forall m | m in r.msgReceived ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+    }
+
+    lemma LemmaDecideOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires UponDecide(r, r', outMsg)
+    requires r.msgReceived <= allMsgs
+    requires forall m | m in r.msgReceived ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+    }
+
+    lemma LemmaNewViewOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires UponNextView(r, r', outMsg)
+    requires r.msgReceived <= allMsgs
+    requires forall m | m in r.msgReceived ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+    }
+
+    lemma LemmaReplicaNextSubStepOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires ReplicaNextSubStep(r, r', outMsg)
+    requires r.msgReceived <= allMsgs
+    requires forall m | m in r.msgReceived ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+        if UponPrepare(r, r', outMsg) {
+            LemmaPrepareOutputQCsHaveVoteEvidence(r, r', outMsg, allMsgs, byzNodes);
+        } else if UponPreCommit(r, r', outMsg) {
+            LemmaPreCommitOutputQCsHaveVoteEvidence(r, r', outMsg, allMsgs, byzNodes);
+        } else if UponCommit(r, r', outMsg) {
+            LemmaCommitOutputQCsHaveVoteEvidence(r, r', outMsg, allMsgs, byzNodes);
+        } else if UponDecide(r, r', outMsg) {
+            LemmaDecideOutputQCsHaveVoteEvidence(r, r', outMsg, allMsgs, byzNodes);
+        } else {
+            LemmaNewViewOutputQCsHaveVoteEvidence(r, r', outMsg, allMsgs, byzNodes);
+        }
+    }
+
+    lemma LemmaReplicaNextOutputQCsHaveVoteEvidence(
+        r : ReplicaState,
+        inMsg : set<Msg>,
+        r' : ReplicaState,
+        outMsg : set<Msg>,
+        allMsgs : set<Msg>,
+        byzNodes : set<Address>)
+    requires ValidReplicaState(r)
+    requires ReplicaNext(r, inMsg, r', outMsg)
+    requires r.msgReceived + inMsg <= allMsgs
+    requires forall m | m in r.msgReceived + inMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    ensures forall m | m in outMsg ::
+        MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+    {
+        var s : seq<ReplicaState>, o : seq<set<Msg>> :|
+                && |s| >= 2
+                && |o| == |s| - 1
+                && s[0] == r.(msgReceived := r.msgReceived + inMsg)
+                && s[|s|-1] == r'
+                && (forall i | 0 <= i < |s| - 1 ::
+                    && ValidReplicaState(s[i])
+                    && ReplicaNextSubStep(s[i], s[i+1], o[i]))
+                && outMsg == setUnionOnSeq(o);
+        LemmaReplicaMsgReceiveStableInNextSubSeq(s, o);
+        forall m | m in outMsg
+            ensures MessageQCsHaveVoteEvidence(allMsgs, byzNodes, m)
+        {
+            LemmaElementInSetUnionOnSeqMustExistInOneOfTheSets(m, o);
+            var i :| 0 <= i < |o| && m in o[i];
+            assert s[i].msgReceived == s[0].msgReceived;
+
+            LemmaReplicaNextSubStepOutputQCsHaveVoteEvidence(
+                s[i], s[i+1], o[i], allMsgs, byzNodes);
+        }
+    }
     lemma LemmaValidationHoldsInPreparePhase(r : ReplicaState, r' : ReplicaState, outMsg : set<Msg>)
     requires ValidReplicaState(r)
     requires UponPrepare(r, r', outMsg)
@@ -505,7 +648,7 @@ module M_Lemmas_Replica {
                                                       && m.justify == r'.prepareQC
                                                       && ValidPrecommitRequest(m)
                                             )
-                                        || isInitialQC(r'.prepareQC)
+                                        || r'.prepareQC == getInitialQC(MT_Prepare)
                                     )
                 );
         assert (r'.lockedQC.Cert? ==>
@@ -517,7 +660,7 @@ module M_Lemmas_Replica {
                                                       && m.justify == r'.lockedQC
                                                       && ValidCommitRequest(m)
                                             )
-                                        || isInitialQC(r'.lockedQC)
+                                        || r'.lockedQC == getInitialQC(MT_PreCommit)
                                     )
                 );
         

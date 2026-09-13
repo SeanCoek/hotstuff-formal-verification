@@ -72,6 +72,98 @@ module M_AuxilarilyFunc {
         && qc.viewNum == 0
     }
 
+    predicate TrustedInitialQC(qc : Cert)
+    {
+        || qc == getInitialQC(MT_Prepare)
+        || qc == getInitialQC(MT_PreCommit)
+    }
+
+    predicate SignatureHasVoteEvidence(msgs : set<Msg>, sig : Signature)
+    {
+        exists vote | vote in msgs ::
+            && ValidVoteMsg(vote)
+            && vote.partialSig == sig
+    }
+
+    predicate CertificateHasVoteEvidence(
+        msgs : set<Msg>,
+        byzNodes : set<Address>,
+        qc : Cert)
+    {
+        || TrustedInitialQC(qc)
+        || (
+            && ValidQC(qc)
+            && (forall sig | sig in qc.signatures ::
+                || sig.signer in byzNodes
+                || SignatureHasVoteEvidence(msgs, sig))
+        )
+    }
+
+    predicate QCOccursInMessage(m : Msg, qc : Cert)
+    {
+        || m.justify == qc
+        || m.lockedQC == qc
+    }
+
+    predicate MessageQCsHaveVoteEvidence(
+        msgs : set<Msg>,
+        byzNodes : set<Address>,
+        m : Msg)
+    {
+        && (ValidQC(m.justify) ==>
+            CertificateHasVoteEvidence(msgs, byzNodes, m.justify))
+        && (ValidQC(m.lockedQC) ==>
+            CertificateHasVoteEvidence(msgs, byzNodes, m.lockedQC))
+    }
+
+    lemma LemmaSignatureEvidenceMonotonic(
+        msgs : set<Msg>,
+        msgs' : set<Msg>,
+        sig : Signature)
+    requires msgs <= msgs'
+    requires SignatureHasVoteEvidence(msgs, sig)
+    ensures SignatureHasVoteEvidence(msgs', sig)
+    {
+    }
+
+    lemma LemmaCertificateEvidenceMonotonic(
+        msgs : set<Msg>,
+        msgs' : set<Msg>,
+        byzNodes : set<Address>,
+        qc : Cert)
+    requires msgs <= msgs'
+    requires CertificateHasVoteEvidence(msgs, byzNodes, qc)
+    ensures CertificateHasVoteEvidence(msgs', byzNodes, qc)
+    {
+        if !TrustedInitialQC(qc) {
+            forall sig | sig in qc.signatures
+                ensures sig.signer in byzNodes || SignatureHasVoteEvidence(msgs', sig)
+            {
+                if sig.signer !in byzNodes {
+                    LemmaSignatureEvidenceMonotonic(msgs, msgs', sig);
+                }
+            }
+        }
+    }
+
+
+    lemma LemmaMessageQCEvidenceMonotonic(
+        msgs : set<Msg>,
+        msgs' : set<Msg>,
+        byzNodes : set<Address>,
+        m : Msg)
+    requires msgs <= msgs'
+    requires MessageQCsHaveVoteEvidence(msgs, byzNodes, m)
+    ensures MessageQCsHaveVoteEvidence(msgs', byzNodes, m)
+    {
+        if ValidQC(m.justify) {
+            LemmaCertificateEvidenceMonotonic(msgs, msgs', byzNodes, m.justify);
+        }
+        if ValidQC(m.lockedQC) {
+            LemmaCertificateEvidenceMonotonic(msgs, msgs', byzNodes, m.lockedQC);
+        }
+    }
+
     function getInitialMsg(sender : Address) : (m : Msg)
     requires sender in All_Nodes
     ensures ValidNewView(m)

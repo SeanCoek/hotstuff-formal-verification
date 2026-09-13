@@ -51,7 +51,7 @@ module M_Thereom {
      * local blockchains in honest replicas should be consistent.
      * 
     */
-    lemma LemmaReachableSystemStateIsConsistent(ss : SystemState)
+    lemma {:isolate_assertions} LemmaReachableSystemStateIsConsistent(ss : SystemState)
     requires Reachable(ss)
     ensures consistency(ss)
     {
@@ -149,6 +149,8 @@ module M_Thereom {
                         var signers2 := getMajoritySignerInValidQC(m2_p.justify);
                         assert r in getSameSignersInTwoQC(m2_p.justify, m1.justify);
                         LemmaGetSameSignersInTwoQCIsInBothQC(m1.justify, m2_p.justify, r, signers1, signers2);
+                        assert QCHeldInSystem(ss, m1.justify);
+                        assert QCHeldInSystem(ss, m2_p.justify);
                         LemmaHonestNodeWontVoteConflictInPrepare(ss, r, m1.justify, m2_p.justify);
                         assert extension(m2_p.justify.block, m1.justify.block);
                     }
@@ -162,6 +164,8 @@ module M_Thereom {
                         var signers2 := getMajoritySignerInValidQC(m1_p.justify);
                         assert r in getSameSignersInTwoQC(m1_p.justify, m2.justify);
                         LemmaGetSameSignersInTwoQCIsInBothQC(m2.justify, m1_p.justify, r, signers1, signers2);
+                        assert QCHeldInSystem(ss, m2.justify);
+                        assert QCHeldInSystem(ss, m1_p.justify);
                         LemmaHonestNodeWontVoteConflictInPrepare(ss, r, m2.justify, m1_p.justify);
                         assert extension(m1_p.justify.block, m2.justify.block);
                     }

@@ -53,6 +53,23 @@ module M_System {
         forall r | r in ss.nodeStates.Keys :: ss.nodeStates[r].id == r
     }
 
+    predicate Inv_HonestSenderOrigin(ss : SystemState)
+    {
+        forall m |
+            && m in ss.msgSent
+            && IsHonest(ss, m.sender)
+        :: m in ss.nodeStates[m.sender].msgSent
+    }
+
+    predicate Inv_QCSignatureEvidence(ss : SystemState)
+    {
+        forall m | m in ss.msgSent ::
+            MessageQCsHaveVoteEvidence(
+                ss.msgSent,
+                ss.adversary.byz_nodes,
+                m)
+    }
+
     /**
      * Invariants that a system should hold at every reachable state in HotStuff. 
      */
@@ -63,6 +80,9 @@ module M_System {
         && (forall replica | replica in ss.nodeStates.Keys :: ss.nodeStates[replica].msgSent <= ss.msgSent)
         && (forall replica | IsHonest(ss, replica) :: ValidReplicaState(ss.nodeStates[replica]))
         && (forall replica | IsHonest(ss, replica) :: ss.nodeStates[replica].msgReceived <= ss.msgSent)
+        && ss.adversary.msgReceived <= ss.msgSent
+        && Inv_HonestSenderOrigin(ss)
+        && Inv_QCSignatureEvidence(ss)
     }
 
     /**

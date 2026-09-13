@@ -12,6 +12,8 @@ module M_Lemmas_System {
     import opened M_SpecTypes
     import opened M_Replica
     import opened M_System
+    import opened M_Adversary
+    import opened M_AuxilarilyFunc
     import opened M_Lemmas_Replica
 
     lemma LemmaInitialSystemStateHoldsValidity(ss : SystemState)
@@ -146,6 +148,153 @@ module M_Lemmas_System {
         }
     }
 
+    lemma LemmaAdversaryMsgReceivedIsSubsetOfSystemMsgSentInSystemNextByOneReplica(
+        ss : SystemState,
+        ss' : SystemState,
+        replica : Address,
+        inMsg : set<Msg>,
+        outMsg : set<Msg>)
+    requires ValidSystemState(ss)
+    requires inMsg <= ss.msgSent
+    requires SystemNextByOneReplica(ss, ss', replica, inMsg, outMsg)
+    ensures ss'.adversary.msgReceived <= ss'.msgSent
+    {
+    }
+
+    lemma {:isolate_assertions} LemmaHonestSenderOriginInSystemNextByOneReplica(
+        ss : SystemState,
+        ss' : SystemState,
+        replica : Address,
+        inMsg : set<Msg>,
+        outMsg : set<Msg>)
+    requires ValidSystemState(ss)
+    requires inMsg <= ss.msgSent
+    requires SystemNextByOneReplica(ss, ss', replica, inMsg, outMsg)
+    ensures Inv_HonestSenderOrigin(ss')
+    {
+        forall m |
+            && m in ss'.msgSent
+            && IsHonest(ss', m.sender)
+        ensures m in ss'.nodeStates[m.sender].msgSent
+        {
+            if m in ss.msgSent {
+                assert IsHonest(ss, m.sender);
+                assert m in ss.nodeStates[m.sender].msgSent;
+                if IsHonest(ss, replica) && m.sender == replica {
+                    LemmaMsgRelationInReplicaNext(
+                        ss.nodeStates[replica],
+                        inMsg,
+                        ss'.nodeStates[replica],
+                        outMsg);
+                }
+            } else {
+                assert m in outMsg;
+                if IsHonest(ss, replica) {
+                    assert ss.nodeStates[replica].id == replica;
+                    LemmaReplicaStableIDInReplicaNext(
+                        ss.nodeStates[replica],
+                        inMsg,
+                        ss'.nodeStates[replica],
+                        outMsg);
+                    assert ss'.nodeStates[replica].id == replica;
+                    LemmaMsgSentBySameReplicaInReplicaNext(
+                        ss.nodeStates[replica],
+                        inMsg,
+                        ss'.nodeStates[replica],
+                        outMsg);
+                    LemmaMsgRelationInReplicaNext(
+                        ss.nodeStates[replica],
+                        inMsg,
+                        ss'.nodeStates[replica],
+                        outMsg);
+                    assert m.sender == replica;
+                } else {
+                    var adversaryReceived := ss.adversary.msgReceived + inMsg;
+                    assert adversaryReceived <= ss.msgSent;
+                    assert m !in adversaryReceived;
+                    assert AdversaryCanCreateMsg(
+                        adversaryReceived,
+                        ss.adversary.byz_nodes,
+                        m);
+                    assert m.sender in ss'.adversary.byz_nodes;
+                    assert false;
+                }
+            }
+        }
+    }
+
+    lemma LemmaQCSignatureEvidenceInSystemNextByOneReplica(
+        ss : SystemState,
+        ss' : SystemState,
+        replica : Address,
+        inMsg : set<Msg>,
+        outMsg : set<Msg>)
+    requires ValidSystemState(ss)
+    requires inMsg <= ss.msgSent
+    requires SystemNextByOneReplica(ss, ss', replica, inMsg, outMsg)
+    ensures Inv_QCSignatureEvidence(ss')
+    {
+        assert ss.msgSent <= ss'.msgSent;
+        forall m | m in ss'.msgSent
+            ensures MessageQCsHaveVoteEvidence(
+                ss'.msgSent,
+                ss'.adversary.byz_nodes,
+                m)
+        {
+            if m in ss.msgSent {
+                assert MessageQCsHaveVoteEvidence(
+                    ss.msgSent,
+                    ss.adversary.byz_nodes,
+                    m);
+                LemmaMessageQCEvidenceMonotonic(
+                    ss.msgSent,
+                    ss'.msgSent,
+                    ss.adversary.byz_nodes,
+                    m);
+            } else {
+                assert m in outMsg;
+                if IsHonest(ss, replica) {
+                    assert ss.nodeStates[replica].msgReceived + inMsg <= ss.msgSent;
+                    assert forall received |
+                        received in ss.nodeStates[replica].msgReceived + inMsg
+                        :: MessageQCsHaveVoteEvidence(
+                            ss.msgSent,
+                            ss.adversary.byz_nodes,
+                            received);
+                    LemmaReplicaNextOutputQCsHaveVoteEvidence(
+                        ss.nodeStates[replica],
+                        inMsg,
+                        ss'.nodeStates[replica],
+                        outMsg,
+                        ss.msgSent,
+                        ss.adversary.byz_nodes);
+                    LemmaMessageQCEvidenceMonotonic(
+                        ss.msgSent,
+                        ss'.msgSent,
+                        ss.adversary.byz_nodes,
+                        m);
+                } else {
+                    var adversaryReceived := ss.adversary.msgReceived + inMsg;
+                    assert adversaryReceived <= ss.msgSent;
+                    if m in adversaryReceived {
+                        assert m in ss.msgSent;
+                        assert false;
+                    } else {
+                        assert AdversaryCanCreateMsg(
+                            adversaryReceived,
+                            ss.adversary.byz_nodes,
+                            m);
+                        LemmaMessageQCEvidenceMonotonic(
+                            adversaryReceived,
+                            ss'.msgSent,
+                            ss.adversary.byz_nodes,
+                            m);
+                    }
+                }
+            }
+        }
+    }
+
     lemma LemmaReplicaMsgSentIsSubsetOfSystemMsgSentInSystemNextByOneReplica(
         ss : SystemState, 
         ss' : SystemState, 
@@ -191,5 +340,8 @@ module M_Lemmas_System {
         LemmaReplicaMsgSentIsSubsetOfSystemMsgSentInSystemNextByOneReplica(ss, ss', replica, inMsg, outMsg);
         LemmaHonestReplicaIsValidInSystemNextByOneReplica(ss, ss', replica, inMsg, outMsg);
         LemmaHonestReplicaMsgReceivedIsSubsetOfSystemMsgSentInSystemNextByOneReplica(ss, ss', replica, inMsg, outMsg);
+        LemmaAdversaryMsgReceivedIsSubsetOfSystemMsgSentInSystemNextByOneReplica(ss, ss', replica, inMsg, outMsg);
+        LemmaHonestSenderOriginInSystemNextByOneReplica(ss, ss', replica, inMsg, outMsg);
+        LemmaQCSignatureEvidenceInSystemNextByOneReplica(ss, ss', replica, inMsg, outMsg);
     }
 }

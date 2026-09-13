@@ -416,7 +416,7 @@ module M_Replica {
                                             && m.justify == r.prepareQC
                                             && ValidPrecommitRequest(m)
                                         )
-                                     || isInitialQC(r.prepareQC)
+                                     || r.prepareQC == getInitialQC(MT_Prepare)
                                 )
             )
     }
@@ -433,14 +433,14 @@ module M_Replica {
                                             ::
                                             && m.justify == r.lockedQC
                                             && ValidCommitRequest(m))
-                                    || isInitialQC(r.lockedQC)
+                                    || r.lockedQC == getInitialQC(MT_PreCommit)
                                 )
         )
     }
 
     predicate LockedQCEvidence(msgReceived : set<Msg>, qc : Cert)
     {
-        || isInitialQC(qc)
+        || qc == getInitialQC(MT_PreCommit)
         || (exists m | m in msgReceived ::
                 && ValidCommitRequest(m)
                 && m.justify == qc)
@@ -518,7 +518,7 @@ module M_Replica {
         && (forall vote |
                 && vote in r.msgSent
                 && ValidVoteMsg(vote)
-            :: vote.viewNum <= r.viewNum)
+            :: 0 < vote.viewNum <= r.viewNum)
         && (forall commitVote |
                 && commitVote in r.msgSent
                 && ValidCommitVote(commitVote)
