@@ -131,7 +131,7 @@ module M_Replica {
             if |matchMsgs| >= quorum(|M_SpecTypes.All_Nodes|)
             then
                 var highQC := getHighQC(matchMsgs);
-                var proposal := getNewBlock(highQC.block);
+                var proposal := getNewBlock(highQC.block, r.viewNum);
                 var proposeMsg := Msg(r.id, MT_Prepare, r.viewNum, proposal, highQC, SigNone, CertNone);
                 && outMsg == filteredVotes + {proposeMsg}
                 && r' == r.(msgSent := r.msgSent + filteredVotes + {proposeMsg})

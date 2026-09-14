@@ -413,12 +413,13 @@ module M_AuxilarilyFunc {
     ensures forall m | m in msgs :: ValidQC(m.justify) ==> r.viewNum >= m.justify.viewNum
     ensures exists m | m in msgs :: ValidQC(m.justify) && m.justify == r
 
-    function getNewBlock(parent : Block) : (r : Block)
+    function getNewBlock(parent : Block, blockId : nat) : (r : Block)
     ensures r.Block?
+    ensures r.blockId == blockId
     ensures r.parent == parent
     ensures r.parent != r
     {
-        Block(parent)
+        Block(blockId, parent)
     }
 
     function getAncestors(b : Block) : (r : seq<Block>)
@@ -431,7 +432,7 @@ module M_AuxilarilyFunc {
     {
         match b
         case EmptyBlock => []
-        case Block(parent) => getAncestors(parent) + [b]
+        case Block(blockId, parent) => getAncestors(parent) + [b]
     }
 
     predicate extension(child : Block, parent : Block)
@@ -485,6 +486,24 @@ module M_AuxilarilyFunc {
         || b1 == b2
         || extension(b1, b2)
         || extension(b2, b1)
+    }
+
+    lemma LemmaConflictingSiblingBlocksExist()
+    ensures exists b1 : Block, b2 : Block ::
+        && b1.Block?
+        && b2.Block?
+        && b1.parent == Genesis_Block
+        && b2.parent == Genesis_Block
+        && !NoConflict(b1, b2)
+    {
+        var b1 := Block(1, Genesis_Block);
+        var b2 := Block(2, Genesis_Block);
+        assert b1 != b2;
+        assert getAncestors(b1) == getAncestors(Genesis_Block) + [b1];
+        assert getAncestors(b2) == getAncestors(Genesis_Block) + [b2];
+        assert !extension(b1, b2);
+        assert !extension(b2, b1);
+        assert !NoConflict(b1, b2);
     }
 
     /**

@@ -354,7 +354,7 @@ module M_Lemmas_Replica {
             var matchMsgs := getMatchMsg(r.msgReceived, MT_NewView, r.viewNum-1);
             if |matchMsgs| >= quorum(|M_SpecTypes.All_Nodes|) {
                 var highQC := getHighQC(matchMsgs);
-                var proposal := getNewBlock(highQC.block);
+                var proposal := getNewBlock(highQC.block, r.viewNum);
                 var proposeMsg := Msg(r.id, MT_Prepare, r.viewNum, proposal, highQC, SigNone, CertNone);
                 assert !ValidVoteMsg(proposeMsg);
                 LemmaAtMostOneValidVoteAfterAddingNonVote(finalVotes, proposeMsg);

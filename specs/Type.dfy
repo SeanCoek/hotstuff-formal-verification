@@ -9,7 +9,7 @@ module M_SpecTypes {
   type {:extern "Hash"} Hash(==,!new)
 
 
-  datatype Block = Block(parent : Block) | EmptyBlock
+  datatype Block = Block(blockId : nat, parent : Block) | EmptyBlock
 
   type Blockchain = seq<Block>
 
@@ -53,7 +53,7 @@ module M_SpecTypes {
 
   const All_Nodes : set<Address> := Honest_Nodes + Adversary_Nodes
 
-  const Genesis_Block : Block := Block(EmptyBlock)
+  const Genesis_Block : Block := Block(0, EmptyBlock)
 
   datatype Configuration = Configuration(
     honestNodes : set<Address>,

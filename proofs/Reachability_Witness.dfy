@@ -367,7 +367,7 @@ module M_Reachability_Witness {
             leader(1),
             MT_Prepare,
             1,
-            getNewBlock(Genesis_Block),
+            getNewBlock(Genesis_Block, 1),
             getInitialQC(MT_Prepare),
             SigNone,
             CertNone)
@@ -607,7 +607,7 @@ module M_Reachability_Witness {
             leaderId,
             MT_Prepare,
             1,
-            getNewBlock(Genesis_Block),
+            getNewBlock(Genesis_Block, 1),
             getInitialQC(MT_Prepare),
             SigNone,
             CertNone);
@@ -678,7 +678,7 @@ module M_Reachability_Witness {
                       && ValidQC(m.justify)
                       && m.justify == highQC;
         }
-        var proposalBlock := getNewBlock(highQC.block);
+        var proposalBlock := getNewBlock(highQC.block, 1);
         proposal := Msg(
             leaderId,
             MT_Prepare,
